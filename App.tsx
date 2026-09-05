@@ -17,20 +17,20 @@ export default function App() {
   useEffect(() => {
     (async () => {
       await Font.loadAsync({
-        'Inter': require('@expo-google-fonts/inter/Inter_400Regular.ttf'),
-        'Inter-Bold': require('@expo-google-fonts/inter/Inter_700Bold.ttf'),
-        'Roboto': require('@expo-google-fonts/roboto/Roboto_400Regular.ttf'),
-        'Roboto-Bold': require('@expo-google-fonts/roboto/Roboto_700Bold.ttf'),
-        'Merriweather': require('@expo-google-fonts/merriweather/Merriweather_400Regular.ttf'),
-        'Merriweather-Bold': require('@expo-google-fonts/merriweather/Merriweather_700Bold.ttf'),
-        'FiraCode': require('@expo-google-fonts/fira-code/FiraCode_400Regular.ttf'),
-        'FiraCode-Bold': require('@expo-google-fonts/fira-code/FiraCode_700Bold.ttf'),
-        'OpenSans': require('@expo-google-fonts/open-sans/OpenSans_400Regular.ttf'),
-        'OpenSans-Bold': require('@expo-google-fonts/open-sans/OpenSans_700Bold.ttf'),
-        'Lato': require('@expo-google-fonts/lato/Lato_400Regular.ttf'),
-        'Lato-Bold': require('@expo-google-fonts/lato/Lato_700Bold.ttf'),
-        'Montserrat': require('@expo-google-fonts/montserrat/Montserrat_400Regular.ttf'),
-        'Montserrat-Bold': require('@expo-google-fonts/montserrat/Montserrat_700Bold.ttf'),
+        'Inter': require('@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf'),
+        'Inter-Bold': require('@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf'),
+        'Roboto': require('@expo-google-fonts/roboto/400Regular/Roboto_400Regular.ttf'),
+        'Roboto-Bold': require('@expo-google-fonts/roboto/700Bold/Roboto_700Bold.ttf'),
+        'Merriweather': require('@expo-google-fonts/merriweather/400Regular/Merriweather_400Regular.ttf'),
+        'Merriweather-Bold': require('@expo-google-fonts/merriweather/700Bold/Merriweather_700Bold.ttf'),
+        'FiraCode': require('@expo-google-fonts/fira-code/400Regular/FiraCode_400Regular.ttf'),
+        'FiraCode-Bold': require('@expo-google-fonts/fira-code/700Bold/FiraCode_700Bold.ttf'),
+        'OpenSans': require('@expo-google-fonts/open-sans/400Regular/OpenSans_400Regular.ttf'),
+        'OpenSans-Bold': require('@expo-google-fonts/open-sans/700Bold/OpenSans_700Bold.ttf'),
+        'Lato': require('@expo-google-fonts/lato/400Regular/Lato_400Regular.ttf'),
+        'Lato-Bold': require('@expo-google-fonts/lato/700Bold/Lato_700Bold.ttf'),
+        'Montserrat': require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
+        'Montserrat-Bold': require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
       });
       setFontsLoaded(true);
     })();
