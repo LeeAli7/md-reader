@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet,
-  Dimensions, Platform, Modal, FlatList,
+  Modal, FlatList, Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,7 +22,6 @@ const STORAGE_KEYS = {
   lineHeight: 'md_line_height',
   font: 'md_font',
   readingTheme: 'md_reading_theme',
-  contentWidth: 'md_content_width',
 };
 
 export default function ReaderScreen({ route, navigation }: Props) {
@@ -38,7 +37,6 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const [wordCount, setWordCount] = useState(0);
   const [readTime, setReadTime] = useState(0);
 
-  // Load settings
   useEffect(() => {
     (async () => {
       try {
@@ -56,7 +54,6 @@ export default function ReaderScreen({ route, navigation }: Props) {
     })();
   }, []);
 
-  // Load file content
   useEffect(() => {
     (async () => {
       try {
@@ -65,7 +62,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
         const words = text.split(/\s+/).filter(Boolean).length;
         setWordCount(words);
         setReadTime(Math.max(1, Math.ceil(words / 200)));
-      } catch (e) {
+      } catch {
         setContent('# Ошибка чтения файла\n\nНе удалось открыть файл.');
       }
     })();
@@ -76,19 +73,19 @@ export default function ReaderScreen({ route, navigation }: Props) {
   };
 
   const rt = readingThemes[selectedTheme] || readingThemes.default;
+  const isDarkReading = rt.text === '#C9D1D9' || rt.text === '#E7E5E4' || rt.text === '#F8F8F2' || rt.text === '#586E75';
 
   const s = styles(insets);
 
   return (
     <View style={[s.container, { backgroundColor: rt.bg }]}>
-      {/* Top bar */}
-      <View style={[s.topBar, { backgroundColor: rt.bg, borderBottomColor: theme.border }]}>
+      <View style={[s.topBar, { backgroundColor: rt.bg, borderBottomColor: rt.text + '15' }]}>
         <Pressable onPress={() => navigation.goBack()} style={s.backBtn}>
           <Ionicons name="chevron-back" size={24} color={rt.text} />
         </Pressable>
         <Text style={[s.title, { color: rt.text }]} numberOfLines={1}>{title}</Text>
         <View style={s.topActions}>
-          <Text style={[s.meta, { color: rt.text + '80' }]}>
+          <Text style={[s.meta, { color: rt.text + '60' }]}>
             {wordCount} слов · ~{readTime} мин
           </Text>
           <Pressable onPress={() => setShowSettings(true)} style={s.settingsBtn}>
@@ -97,7 +94,6 @@ export default function ReaderScreen({ route, navigation }: Props) {
         </View>
       </View>
 
-      {/* Markdown content */}
       <ScrollView
         style={s.scroll}
         contentContainerStyle={[
@@ -107,42 +103,60 @@ export default function ReaderScreen({ route, navigation }: Props) {
       >
         <Markdown
           style={{
-            body: { color: rt.text, fontSize, lineHeight: fontSize * lineHeight, fontFamily: selectedFont },
+            body: {
+              color: rt.text, fontSize,
+              lineHeight: fontSize * lineHeight,
+              fontFamily: selectedFont === 'Inter' ? 'Inter' :
+                selectedFont === 'Roboto' ? 'Roboto' :
+                selectedFont === 'Merriweather' ? 'Merriweather' :
+                selectedFont === 'Fira Code' ? 'FiraCode' :
+                selectedFont === 'Open Sans' ? 'OpenSans' :
+                selectedFont === 'Lato' ? 'Lato' :
+                selectedFont === 'Montserrat' ? 'Montserrat' : 'Inter',
+            },
             heading1: { color: rt.text, fontSize: fontSize * 1.8, fontWeight: '700', marginBottom: 12 },
             heading2: { color: rt.text, fontSize: fontSize * 1.5, fontWeight: '600', marginBottom: 10 },
             heading3: { color: rt.text, fontSize: fontSize * 1.25, fontWeight: '600', marginBottom: 8 },
-            link: { color: theme.accent },
+            link: { color: isDarkReading ? '#60A5FA' : '#2563EB' },
             code_inline: {
-              backgroundColor: rt.text === '#F0F0F0' ? '#2A2A2A' : '#F0F0F0',
+              backgroundColor: isDarkReading ? rt.text + '15' : rt.text + '0A',
               color: rt.text, fontSize: fontSize * 0.9, borderRadius: 4,
               paddingHorizontal: 6, paddingVertical: 2,
             },
             code_block: {
-              backgroundColor: rt.text === '#F0F0F0' ? '#1A1A1A' : '#F5F5F0',
+              backgroundColor: isDarkReading ? rt.text + '10' : rt.text + '08',
               color: rt.text, fontSize: fontSize * 0.85, borderRadius: 8,
               padding: 16, marginVertical: 8,
             },
             fence: {
-              backgroundColor: rt.text === '#F0F0F0' ? '#1A1A1A' : '#F5F5F0',
+              backgroundColor: isDarkReading ? rt.text + '10' : rt.text + '08',
               color: rt.text, fontSize: fontSize * 0.85, borderRadius: 8,
               padding: 16, marginVertical: 8,
             },
             blockquote: {
-              borderLeftColor: theme.accent, borderLeftWidth: 3,
-              paddingLeft: 12, marginVertical: 8, opacity: 0.85,
+              borderLeftColor: isDarkReading ? '#60A5FA' : '#2563EB',
+              borderLeftWidth: 3,
+              paddingLeft: 14,
+              marginLeft: 0,
+              marginVertical: 10,
+              backgroundColor: isDarkReading ? rt.text + '08' : rt.text + '05',
+              paddingVertical: 10,
+              paddingRight: 12,
+              borderRadius: 0,
             },
             table: { borderWidth: 1, borderColor: rt.text + '20', borderRadius: 8, marginVertical: 8 },
             th: { backgroundColor: rt.text + '08', padding: 8, borderBottomWidth: 1, borderColor: rt.text + '20' },
             td: { padding: 8, borderBottomWidth: 0.5, borderColor: rt.text + '10' },
             hr: { backgroundColor: rt.text + '20', height: 1, marginVertical: 16 },
             list_item: { color: rt.text, fontSize, lineHeight: fontSize * lineHeight },
+            strong: { fontWeight: '700' as const, color: rt.text },
+            em: { fontStyle: 'italic' as const, color: rt.text },
           }}
         >
           {content}
         </Markdown>
       </ScrollView>
 
-      {/* Settings sheet */}
       <Modal visible={showSettings} transparent animationType="slide">
         <View style={s.sheetOverlay}>
           <Pressable style={s.sheetBackdrop} onPress={() => setShowSettings(false)} />
@@ -150,7 +164,6 @@ export default function ReaderScreen({ route, navigation }: Props) {
             <View style={s.sheetHandle} />
             <Text style={[s.sheetTitle, { color: theme.text }]}>Настройки чтения</Text>
 
-            {/* Font size */}
             <Text style={[s.label, { color: theme.textSecondary }]}>Размер шрифта: {fontSize}px</Text>
             <View style={s.sliderRow}>
               <Pressable onPress={() => { const v = Math.max(12, fontSize - 1); setFontSize(v); saveSetting(STORAGE_KEYS.fontSize, String(v)); }}>
@@ -164,7 +177,6 @@ export default function ReaderScreen({ route, navigation }: Props) {
               </Pressable>
             </View>
 
-            {/* Line height */}
             <Text style={[s.label, { color: theme.textSecondary }]}>Межстрочный: {lineHeight.toFixed(1)}</Text>
             <View style={s.sliderRow}>
               <Pressable onPress={() => { const v = Math.max(1.2, +(lineHeight - 0.1).toFixed(1)); setLineHeight(v); saveSetting(STORAGE_KEYS.lineHeight, String(v)); }}>
@@ -178,8 +190,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
               </Pressable>
             </View>
 
-            {/* Reading theme */}
-            <Text style={[s.label, { color: theme.textSecondary, marginTop: 16 }]}>Тема</Text>
+            <Text style={[s.label, { color: theme.textSecondary, marginTop: 16 }]}>Тема чтения</Text>
             <FlatList
               data={Object.entries(readingThemes)}
               horizontal
@@ -199,7 +210,6 @@ export default function ReaderScreen({ route, navigation }: Props) {
               )}
             />
 
-            {/* Font picker */}
             <Text style={[s.label, { color: theme.textSecondary, marginTop: 16 }]}>Шрифт</Text>
             <FlatList
               data={[...fonts]}
@@ -216,7 +226,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
                     { backgroundColor: selectedFont === f ? theme.accentSoft : 'transparent' },
                   ]}
                 >
-                  <Text style={{ color: theme.text, fontSize: 12, fontFamily: f }}>{f}</Text>
+                  <Text style={{ color: theme.text, fontSize: 12 }}>{f}</Text>
                 </Pressable>
               )}
             />
@@ -246,8 +256,6 @@ function styles(insets: any) {
     settingsBtn: { padding: 8 },
     scroll: { flex: 1 },
     content: { padding: 20, paddingBottom: 100 },
-
-    // Settings sheet
     sheetOverlay: { flex: 1, justifyContent: 'flex-end' },
     sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
     sheet: {

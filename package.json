@@ -9,6 +9,13 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@expo-google-fonts/fira-code": "^0.4.1",
+    "@expo-google-fonts/inter": "^0.4.2",
+    "@expo-google-fonts/lato": "^0.4.1",
+    "@expo-google-fonts/merriweather": "^0.4.2",
+    "@expo-google-fonts/montserrat": "^0.4.2",
+    "@expo-google-fonts/open-sans": "^0.4.2",
+    "@expo-google-fonts/roboto": "^0.4.3",
     "@expo/vector-icons": "^14.0.0",
     "@react-native-async-storage/async-storage": "^2.0.0",
     "@react-navigation/native": "^7.0.0",
@@ -17,7 +24,7 @@
     "expo-asset": "~11.0.5",
     "expo-document-picker": "~13.0.0",
     "expo-file-system": "~18.0.0",
-    "expo-font": "~13.0.0",
+    "expo-font": "~13.0.4",
     "expo-status-bar": "~2.0.0",
     "react": "18.3.1",
     "react-native": "0.76.7",
