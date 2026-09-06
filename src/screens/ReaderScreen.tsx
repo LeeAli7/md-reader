@@ -1,58 +1,63 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet,
-  Modal, FlatList, Animated,
+  Modal, FlatList, Alert, NativeSyntheticEvent, NativeScrollEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import { useTheme } from '../hooks/useTheme';
 import { readingThemes } from '../theme/tokens';
-import { fonts, defaultSizes } from '../theme/fonts';
+import { fonts } from '../theme/fonts';
+import { useAppSettingsOpt } from '../context/AppSettingsContext';
+import { CodeBlock } from '../components/CodeBlock';
+import { ReaderTOC, Heading } from '../components/ReaderTOC';
+import { ReadingProgressBar } from '../components/ReadingProgressBar';
 
 interface Props {
   route: any;
   navigation: any;
 }
 
-const STORAGE_KEYS = {
-  fontSize: 'md_font_size',
-  lineHeight: 'md_line_height',
-  font: 'md_font',
-  readingTheme: 'md_reading_theme',
-};
+function parseHeadings(md: string): Heading[] {
+  const out: Heading[] = [];
+  const re = /^(#{1,3})\s+(.+)$/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(md)) !== null) {
+    out.push({ level: m[1].length, title: m[2].trim(), charIndex: m.index });
+  }
+  return out;
+}
+
+function nodeText(node: any): string {
+  if (!node) return '';
+  if (typeof node.content === 'string') return node.content;
+  if (Array.isArray(node.children)) return node.children.map(nodeText).join('');
+  if (typeof node.children === 'string') return node.children;
+  return '';
+}
 
 export default function ReaderScreen({ route, navigation }: Props) {
   const { uri, title } = route.params;
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
+  const appSettings = useAppSettingsOpt();
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
   const [content, setContent] = useState('');
   const [showSettings, setShowSettings] = useState(false);
-  const [fontSize, setFontSize] = useState(defaultSizes.fontSize);
-  const [lineHeight, setLineHeight] = useState(defaultSizes.lineHeight);
-  const [selectedFont, setSelectedFont] = useState('Inter');
-  const [selectedTheme, setSelectedTheme] = useState(isDark ? 'github' : 'default');
+  const [showTOC, setShowTOC] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [contentHeight, setContentHeight] = useState(1);
   const [wordCount, setWordCount] = useState(0);
   const [readTime, setReadTime] = useState(0);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const [fs, lh, f, t] = await Promise.all([
-          AsyncStorage.getItem(STORAGE_KEYS.fontSize),
-          AsyncStorage.getItem(STORAGE_KEYS.lineHeight),
-          AsyncStorage.getItem(STORAGE_KEYS.font),
-          AsyncStorage.getItem(STORAGE_KEYS.readingTheme),
-        ]);
-        if (fs) setFontSize(Number(fs));
-        if (lh) setLineHeight(Number(lh));
-        if (f) setSelectedFont(f);
-        if (t) setSelectedTheme(t);
-      } catch {}
-    })();
-  }, []);
+  // Настройки чтения из AppContext (Settings правит то же место).
+  const fontSize = appSettings?.fontSize ?? 16;
+  const lineHeight = appSettings?.lineHeight ?? 1.7;
+  const selectedFont = appSettings?.font ?? 'Inter';
+  const selectedTheme = appSettings?.readingTheme ?? 'default';
+  const contentWidth = appSettings?.contentWidth ?? 720;
 
   useEffect(() => {
     (async () => {
@@ -68,12 +73,50 @@ export default function ReaderScreen({ route, navigation }: Props) {
     })();
   }, [uri]);
 
-  const saveSetting = async (key: string, value: string) => {
-    try { await AsyncStorage.setItem(key, value); } catch {}
-  };
+  const headings = useMemo(() => parseHeadings(content), [content]);
 
   const rt = readingThemes[selectedTheme] || readingThemes.default;
   const isDarkReading = rt.text === '#C9D1D9' || rt.text === '#E7E5E4' || rt.text === '#F8F8F2' || rt.text === '#586E75';
+
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const max = Math.max(1, contentSize.height - layoutMeasurement.height);
+    setProgress(Math.max(0, Math.min(1, contentOffset.y / max)));
+    setContentHeight(Math.max(1, contentSize.height));
+  };
+
+  const jumpToHeading = (h: Heading) => {
+    setShowTOC(false);
+    const y = Math.max(0, (h.charIndex / Math.max(1, content.length)) * contentHeight - 80);
+    setTimeout(() => scrollRef.current?.scrollTo({ y, animated: true }), 100);
+  };
+
+  const openEditor = () => {
+    try {
+      navigation.navigate('Editor', { uri, title });
+    } catch {
+      Alert.alert('Редактор скоро', 'Экран EditorScreen добавит Арес в фазе «движок».');
+    }
+  };
+
+  const fontFamily =
+    selectedFont === 'Inter' ? 'Inter' :
+    selectedFont === 'Roboto' ? 'Roboto' :
+    selectedFont === 'Merriweather' ? 'Merriweather' :
+    selectedFont === 'Fira Code' ? 'FiraCode' :
+    selectedFont === 'Open Sans' ? 'OpenSans' :
+    selectedFont === 'Lato' ? 'Lato' :
+    selectedFont === 'Montserrat' ? 'Montserrat' : undefined;
+
+  const rules = {
+    fence: (node: any) => <CodeBlock key={node.key} code={nodeText(node)} rt={rt} />,
+    code_block: (node: any) => <CodeBlock key={node.key} code={nodeText(node)} rt={rt} />,
+    table: (node: any, children: any) => (
+      <ScrollView key={node.key} horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
+        <View>{children}</View>
+      </ScrollView>
+    ),
+  };
 
   const s = styles(insets);
 
@@ -88,31 +131,35 @@ export default function ReaderScreen({ route, navigation }: Props) {
           <Text style={[s.meta, { color: rt.text + '60' }]}>
             {wordCount} слов · ~{readTime} мин
           </Text>
-          <Pressable onPress={() => setShowSettings(true)} style={s.settingsBtn}>
+          {headings.length > 0 && (
+            <Pressable onPress={() => setShowTOC(true)} style={s.iconBtn}>
+              <Ionicons name="list-outline" size={22} color={rt.text} />
+            </Pressable>
+          )}
+          <Pressable onPress={openEditor} style={s.iconBtn}>
+            <Ionicons name="pencil-outline" size={22} color={rt.text} />
+          </Pressable>
+          <Pressable onPress={() => setShowSettings(true)} style={s.iconBtn}>
             <Ionicons name="settings-outline" size={22} color={rt.text} />
           </Pressable>
         </View>
       </View>
+      <ReadingProgressBar progress={progress} color={theme.accent} />
 
       <ScrollView
+        ref={scrollRef}
         style={s.scroll}
-        contentContainerStyle={[
-          s.content,
-          { maxWidth: defaultSizes.contentWidth, alignSelf: 'center', width: '100%' },
-        ]}
+        contentContainerStyle={[s.content, { maxWidth: contentWidth, alignSelf: 'center', width: '100%' }]}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
       >
         <Markdown
+          rules={rules as any}
           style={{
             body: {
               color: rt.text, fontSize,
               lineHeight: fontSize * lineHeight,
-              fontFamily: selectedFont === 'Inter' ? 'Inter' :
-                selectedFont === 'Roboto' ? 'Roboto' :
-                selectedFont === 'Merriweather' ? 'Merriweather' :
-                selectedFont === 'Fira Code' ? 'FiraCode' :
-                selectedFont === 'Open Sans' ? 'OpenSans' :
-                selectedFont === 'Lato' ? 'Lato' :
-                selectedFont === 'Montserrat' ? 'Montserrat' : 'Inter',
+              ...(fontFamily ? { fontFamily } : {}),
             },
             heading1: { color: rt.text, fontSize: fontSize * 1.8, fontWeight: '700', marginBottom: 12 },
             heading2: { color: rt.text, fontSize: fontSize * 1.5, fontWeight: '600', marginBottom: 10 },
@@ -122,16 +169,6 @@ export default function ReaderScreen({ route, navigation }: Props) {
               backgroundColor: isDarkReading ? rt.text + '15' : rt.text + '0A',
               color: rt.text, fontSize: fontSize * 0.9, borderRadius: 4,
               paddingHorizontal: 6, paddingVertical: 2,
-            },
-            code_block: {
-              backgroundColor: isDarkReading ? rt.text + '10' : rt.text + '08',
-              color: rt.text, fontSize: fontSize * 0.85, borderRadius: 8,
-              padding: 16, marginVertical: 8,
-            },
-            fence: {
-              backgroundColor: isDarkReading ? rt.text + '10' : rt.text + '08',
-              color: rt.text, fontSize: fontSize * 0.85, borderRadius: 8,
-              padding: 16, marginVertical: 8,
             },
             blockquote: {
               borderLeftColor: isDarkReading ? '#60A5FA' : '#2563EB',
@@ -157,6 +194,16 @@ export default function ReaderScreen({ route, navigation }: Props) {
         </Markdown>
       </ScrollView>
 
+      <ReaderTOC
+        visible={showTOC}
+        headings={headings}
+        theme={theme}
+        rtText={rt.text}
+        rtBg={rt.bg}
+        onClose={() => setShowTOC(false)}
+        onSelect={jumpToHeading}
+      />
+
       <Modal visible={showSettings} transparent animationType="slide">
         <View style={s.sheetOverlay}>
           <Pressable style={s.sheetBackdrop} onPress={() => setShowSettings(false)} />
@@ -166,26 +213,26 @@ export default function ReaderScreen({ route, navigation }: Props) {
 
             <Text style={[s.label, { color: theme.textSecondary }]}>Размер шрифта: {fontSize}px</Text>
             <View style={s.sliderRow}>
-              <Pressable onPress={() => { const v = Math.max(12, fontSize - 1); setFontSize(v); saveSetting(STORAGE_KEYS.fontSize, String(v)); }}>
+              <Pressable onPress={() => appSettings?.setFontSize(Math.max(12, fontSize - 1))}>
                 <Ionicons name="remove-circle-outline" size={28} color={theme.accent} />
               </Pressable>
               <View style={[s.sliderTrack, { backgroundColor: theme.border }]}>
                 <View style={[s.sliderFill, { width: `${((fontSize - 12) / 16) * 100}%`, backgroundColor: theme.accent }]} />
               </View>
-              <Pressable onPress={() => { const v = Math.min(28, fontSize + 1); setFontSize(v); saveSetting(STORAGE_KEYS.fontSize, String(v)); }}>
+              <Pressable onPress={() => appSettings?.setFontSize(Math.min(28, fontSize + 1))}>
                 <Ionicons name="add-circle-outline" size={28} color={theme.accent} />
               </Pressable>
             </View>
 
             <Text style={[s.label, { color: theme.textSecondary }]}>Межстрочный: {lineHeight.toFixed(1)}</Text>
             <View style={s.sliderRow}>
-              <Pressable onPress={() => { const v = Math.max(1.2, +(lineHeight - 0.1).toFixed(1)); setLineHeight(v); saveSetting(STORAGE_KEYS.lineHeight, String(v)); }}>
+              <Pressable onPress={() => appSettings?.setLineHeight(Math.max(1.2, +(lineHeight - 0.1).toFixed(1)))}>
                 <Ionicons name="remove-circle-outline" size={28} color={theme.accent} />
               </Pressable>
               <View style={[s.sliderTrack, { backgroundColor: theme.border }]}>
                 <View style={[s.sliderFill, { width: `${((lineHeight - 1.2) / 1.3) * 100}%`, backgroundColor: theme.accent }]} />
               </View>
-              <Pressable onPress={() => { const v = Math.min(2.5, +(lineHeight + 0.1).toFixed(1)); setLineHeight(v); saveSetting(STORAGE_KEYS.lineHeight, String(v)); }}>
+              <Pressable onPress={() => appSettings?.setLineHeight(Math.min(2.5, +(lineHeight + 0.1).toFixed(1)))}>
                 <Ionicons name="add-circle-outline" size={28} color={theme.accent} />
               </Pressable>
             </View>
@@ -199,7 +246,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
               contentContainerStyle={{ gap: 8, paddingVertical: 8 }}
               renderItem={({ item: [key, rt2] }) => (
                 <Pressable
-                  onPress={() => { setSelectedTheme(key); saveSetting(STORAGE_KEYS.readingTheme, key); }}
+                  onPress={() => appSettings?.setReadingTheme(key)}
                   style={[
                     s.themeChip,
                     { backgroundColor: rt2.bg, borderColor: selectedTheme === key ? theme.accent : rt2.text + '20' },
@@ -219,7 +266,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
               contentContainerStyle={{ gap: 8, paddingVertical: 8 }}
               renderItem={({ item: f }) => (
                 <Pressable
-                  onPress={() => { setSelectedFont(f); saveSetting(STORAGE_KEYS.font, f); }}
+                  onPress={() => appSettings?.setFont(f)}
                   style={[
                     s.fontChip,
                     { borderColor: selectedFont === f ? theme.accent : theme.border },
@@ -251,9 +298,9 @@ function styles(insets: any) {
     },
     backBtn: { padding: 8 },
     title: { flex: 1, fontSize: 16, fontWeight: '600', marginHorizontal: 4 },
-    topActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    topActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     meta: { fontSize: 12 },
-    settingsBtn: { padding: 8 },
+    iconBtn: { padding: 8 },
     scroll: { flex: 1 },
     content: { padding: 20, paddingBottom: 100 },
     sheetOverlay: { flex: 1, justifyContent: 'flex-end' },
