@@ -5,19 +5,14 @@ import {
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getFavorites, toggleFavorite, getRecent, pushRecent as storePushRecent, getTagMap, setTags as storeSetTags, type RecentEntry } from '../utils/metaStore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { FileTypeIcon } from '../components/FileTypeIcon';
 import { TagChips } from '../components/TagChips';
 
-// Хранилище метаданных (временно здесь, переедет в src/utils/metaStore.ts Ареса):
-//   md2_favs: string[]            — uri избранного
-//   md2_recent: {uri,name,ts}[]   — недавние, max 30
-//   md2_file_tags: Record<uri,string[]> — теги файлов
-const META = { favs: 'md2_favs', recent: 'md2_recent', tags: 'md2_file_tags' };
-const MAX_RECENT = 30;
+// Метаданные (избранное / недавние / теги) — единый слой src/utils/metaStore.ts, ключи md2_*.
 
 export interface FileEntry {
   name: string;
@@ -61,7 +56,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const [sortAsc, setSortAsc] = useState(true);
   const [showSort, setShowSort] = useState(false);
   const [favs, setFavs] = useState<string[]>([]);
-  const [recent, setRecent] = useState<{ uri: string; name: string; ts: number }[]>([]);
+  const [recent, setRecent] = useState<RecentEntry[]>([]);
   const [tags, setTags] = useState<Record<string, string[]>>({});
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [tagFor, setTagFor] = useState<FileEntry | null>(null);
@@ -94,14 +89,10 @@ export default function FileBrowserScreen({ navigation }: Props) {
 
   const loadMeta = useCallback(async () => {
     try {
-      const [f, r, t] = await Promise.all([
-        AsyncStorage.getItem(META.favs),
-        AsyncStorage.getItem(META.recent),
-        AsyncStorage.getItem(META.tags),
-      ]);
-      if (f) setFavs(JSON.parse(f));
-      if (r) setRecent(JSON.parse(r));
-      if (t) setTags(JSON.parse(t));
+      const [f, r, t] = await Promise.all([getFavorites(), getRecent(), getTagMap()]);
+      setFavs(f);
+      setRecent(r);
+      setTags(t);
     } catch {}
   }, []);
 
@@ -114,19 +105,15 @@ export default function FileBrowserScreen({ navigation }: Props) {
 
   const pathParts = currentPath.replace(MD_READER_DIR, '').split('/').filter(Boolean);
 
-  const pushRecent = async (entry: FileEntry) => {
+  const recordRecent = async (entry: FileEntry) => {
     try {
-      const next = [{ uri: entry.uri, name: entry.name, ts: Date.now() }, ...recent.filter((r) => r.uri !== entry.uri)].slice(0, MAX_RECENT);
-      setRecent(next);
-      await AsyncStorage.setItem(META.recent, JSON.stringify(next));
+      setRecent(await storePushRecent(entry.uri, entry.name));
     } catch {}
   };
 
   const toggleFav = async (uri: string) => {
     try {
-      const next = favs.includes(uri) ? favs.filter((u) => u !== uri) : [...favs, uri];
-      setFavs(next);
-      await AsyncStorage.setItem(META.favs, JSON.stringify(next));
+      setFavs(await toggleFavorite(uri));
     } catch {}
   };
 
@@ -136,9 +123,8 @@ export default function FileBrowserScreen({ navigation }: Props) {
     try {
       const cur = tags[tagFor.uri] || [];
       if (!cur.includes(t)) {
-        const next = { ...tags, [tagFor.uri]: [...cur, t] };
-        setTags(next);
-        await AsyncStorage.setItem(META.tags, JSON.stringify(next));
+        const clean = await storeSetTags(tagFor.uri, [...cur, t]);
+        setTags({ ...tags, [tagFor.uri]: clean });
       }
     } catch {}
     setTagFor(null);
@@ -147,15 +133,17 @@ export default function FileBrowserScreen({ navigation }: Props) {
 
   const removeTag = async (uri: string, tag: string) => {
     try {
-      const next = { ...tags, [uri]: (tags[uri] || []).filter((x) => x !== tag) };
+      const clean = await storeSetTags(uri, (tags[uri] || []).filter((x) => x !== tag));
+      const next = { ...tags };
+      if (clean.length === 0) delete next[uri];
+      else next[uri] = clean;
       setTags(next);
-      await AsyncStorage.setItem(META.tags, JSON.stringify(next));
     } catch {}
   };
 
   const openEntry = (entry: FileEntry) => {
     if (entry.isDir) return;
-    pushRecent(entry);
+    recordRecent(entry);
     navigation.navigate('Reader', { uri: entry.uri, title: entry.name });
   };
 
@@ -272,7 +260,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
     const path = currentPath + name;
     await FileSystem.writeAsStringAsync(path, `# ${name.replace('.md', '')}\n\n`);
     const entry = { name, uri: path, isDir: false, modifiedAt: Date.now() / 1000 };
-    pushRecent(entry);
+    recordRecent(entry);
     navigation.navigate('Reader', { uri: path, title: name });
   };
 
@@ -296,7 +284,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
     [favs, query]
   );
   const recentShown = React.useMemo(
-    () => recent.filter((r) => !query || r.name.toLowerCase().includes(query.trim().toLowerCase())),
+    () => recent.filter((r) => !query || r.title.toLowerCase().includes(query.trim().toLowerCase())),
     [recent, query]
   );
   const allTags = React.useMemo(() => {
@@ -520,10 +508,10 @@ export default function FileBrowserScreen({ navigation }: Props) {
             keyExtractor={(item) => item.uri}
             contentContainerStyle={s.list}
             renderItem={({ item }) => (
-              <Pressable onPress={() => navigation.navigate('Reader', { uri: item.uri, title: item.name })} style={[s.item, { borderBottomColor: theme.divider }]}>
-                <FileTypeIcon name={item.name} theme={theme} />
+              <Pressable onPress={() => navigation.navigate('Reader', { uri: item.uri, title: item.title })} style={[s.item, { borderBottomColor: theme.divider }]}>
+                <FileTypeIcon name={item.title} theme={theme} />
                 <View style={s.info}>
-                  <Text style={[s.name, { color: theme.text }]} numberOfLines={1}>{item.name}</Text>
+                  <Text style={[s.name, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
                   <Text style={[s.meta, { color: theme.textSecondary }]}>{new Date(item.ts).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</Text>
                 </View>
               </Pressable>

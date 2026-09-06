@@ -92,11 +92,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
   };
 
   const openEditor = () => {
-    try {
-      navigation.navigate('Editor', { uri, title });
-    } catch {
-      Alert.alert('Редактор скоро', 'Экран EditorScreen добавит Арес в фазе «движок».');
-    }
+    navigation.navigate('Editor', { uri, title });
   };
 
   const fontFamily =
