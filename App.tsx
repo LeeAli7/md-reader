@@ -4,6 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider } from './src/hooks/useTheme';
+import { AppSettingsProvider } from './src/context/AppSettingsContext';
 import FileBrowserScreen from './src/screens/FileBrowserScreen';
 import ReaderScreen from './src/screens/ReaderScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
@@ -40,6 +41,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+      <AppSettingsProvider>
       <ThemeProvider>
         <NavigationContainer>
           <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
@@ -50,6 +52,7 @@ export default function App() {
         </NavigationContainer>
         <StatusBar style="auto" />
       </ThemeProvider>
+      </AppSettingsProvider>
     </SafeAreaProvider>
   );
 }
