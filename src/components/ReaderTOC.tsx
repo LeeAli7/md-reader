@@ -26,7 +26,7 @@ export function ReaderTOC({ visible, headings, theme, rtText, rtBg, onClose, onS
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={s.overlay}>
         <Pressable style={s.backdrop} onPress={onClose} />
-        <View style={[s.drawer, { backgroundColor: rtBg, paddingTop: insets.top + 12 }]}>
+        <View style={[s.drawer, { backgroundColor: rtBg, paddingTop: insets.top + 28, paddingBottom: insets.bottom + 16 }]}>
           <View style={s.head}>
             <Text style={[s.title, { color: rtText }]}>Оглавление</Text>
             <Pressable onPress={onClose} hitSlop={10} style={s.close}>
@@ -39,6 +39,7 @@ export function ReaderTOC({ visible, headings, theme, rtText, rtBg, onClose, onS
             <FlatList
               data={headings}
               keyExtractor={(_, i) => String(i)}
+              contentContainerStyle={{ paddingBottom: 24 }}
               renderItem={({ item }) => (
                 <Pressable onPress={() => onSelect(item)} style={s.row}>
                   <Text
