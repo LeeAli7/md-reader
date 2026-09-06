@@ -6,6 +6,7 @@ import {
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import { getFavorites, toggleFavorite, getRecent, pushRecent as storePushRecent, getTagMap, setTags as storeSetTags, removeFile as storeRemoveFile, type RecentEntry } from '../utils/metaStore';
+import { getFolderTree as engineGetFolderTree } from '../utils/folderTree';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
@@ -42,17 +43,12 @@ interface FolderNode {
 
 const MD_READER_DIR = FileSystem.documentDirectory + 'md-reader/';
 
-// Дерево папок: getFolderTree движка, если уже есть у Ареса, иначе строим сами.
+// Дерево папок — движок (src/utils/folderTree.ts).
 async function loadFolderTree(): Promise<FolderNode[] | null> {
-  for (const mod of ['../utils/folderTree', '../utils/fileSystem', '../utils/fileTypes']) {
-    try {
-      const eng: any = require(mod);
-      if (eng && typeof eng.getFolderTree === 'function') {
-        const tree = await eng.getFolderTree();
-        if (Array.isArray(tree)) return tree as FolderNode[];
-      }
-    } catch {}
-  }
+  try {
+    const tree = await engineGetFolderTree();
+    if (Array.isArray(tree)) return tree as FolderNode[];
+  } catch {}
   return null;
 }
 
