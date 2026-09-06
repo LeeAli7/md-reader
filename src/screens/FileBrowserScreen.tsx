@@ -76,8 +76,8 @@ export default function FileBrowserScreen({ navigation }: Props) {
           name,
           uri: path + name,
           isDir: itemInfo.isDirectory ?? false,
-          modifiedAt: itemInfo.modificationTime ?? 0,
-          size: itemInfo.size,
+          modifiedAt: itemInfo.exists ? (itemInfo.modificationTime ?? 0) : 0,
+          size: itemInfo.exists ? itemInfo.size : undefined,
         });
       }
       setEntries(result);
