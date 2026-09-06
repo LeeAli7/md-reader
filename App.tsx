@@ -18,6 +18,8 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
+      // Грузим все 15 семейств из theme/fonts.ts одним проходом.
+      // Ключ family = имя без пробелов — тот же ключ использует ReaderScreen.
       await Font.loadAsync({
         'Inter': require('@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf'),
         'Inter-Bold': require('@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf'),
@@ -33,6 +35,22 @@ export default function App() {
         'Lato-Bold': require('@expo-google-fonts/lato/700Bold/Lato_700Bold.ttf'),
         'Montserrat': require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
         'Montserrat-Bold': require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
+        'Lora': require('@expo-google-fonts/lora/400Regular/Lora_400Regular.ttf'),
+        'Lora-Bold': require('@expo-google-fonts/lora/700Bold/Lora_700Bold.ttf'),
+        'PlayfairDisplay': require('@expo-google-fonts/playfair-display/400Regular/PlayfairDisplay_400Regular.ttf'),
+        'PlayfairDisplay-Bold': require('@expo-google-fonts/playfair-display/700Bold/PlayfairDisplay_700Bold.ttf'),
+        'PTSerif': require('@expo-google-fonts/pt-serif/400Regular/PTSerif_400Regular.ttf'),
+        'PTSerif-Bold': require('@expo-google-fonts/pt-serif/700Bold/PTSerif_700Bold.ttf'),
+        'SourceSerifPro': require('@expo-google-fonts/source-serif-pro/400Regular/SourceSerifPro_400Regular.ttf'),
+        'SourceSerifPro-Bold': require('@expo-google-fonts/source-serif-pro/700Bold/SourceSerifPro_700Bold.ttf'),
+        'Nunito': require('@expo-google-fonts/nunito/400Regular/Nunito_400Regular.ttf'),
+        'Nunito-Bold': require('@expo-google-fonts/nunito/700Bold/Nunito_700Bold.ttf'),
+        'Poppins': require('@expo-google-fonts/poppins/400Regular/Poppins_400Regular.ttf'),
+        'Poppins-Bold': require('@expo-google-fonts/poppins/700Bold/Poppins_700Bold.ttf'),
+        'Raleway': require('@expo-google-fonts/raleway/400Regular/Raleway_400Regular.ttf'),
+        'Raleway-Bold': require('@expo-google-fonts/raleway/700Bold/Raleway_700Bold.ttf'),
+        'JetBrainsMono': require('@expo-google-fonts/jetbrains-mono/400Regular/JetBrainsMono_400Regular.ttf'),
+        'JetBrainsMono-Bold': require('@expo-google-fonts/jetbrains-mono/700Bold/JetBrainsMono_700Bold.ttf'),
       });
       setFontsLoaded(true);
     })();

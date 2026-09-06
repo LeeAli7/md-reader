@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 declare const require: any;
 
 // Копирование опционально: expo-clipboard подтянется зависимостями,
-// без него кнопка тихо пишет в консоль вместо падения.
+// без него кнопка тихо ничего не делает вместо падения.
 function getClipboard(): any | null {
   try {
     return require('expo-clipboard');
@@ -14,7 +14,7 @@ function getClipboard(): any | null {
   }
 }
 
-export function CodeBlock({ code, rt }: { code: string; rt: { bg: string; text: string } }) {
+function CodeBlockInner({ code, rt }: { code: string; rt: { bg: string; text: string } }) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -38,6 +38,9 @@ export function CodeBlock({ code, rt }: { code: string; rt: { bg: string; text: 
     </View>
   );
 }
+
+// Мемоизирован: чанки Reader не перерендеривают код при скролле.
+export const CodeBlock = React.memo(CodeBlockInner);
 
 const s = StyleSheet.create({
   wrap: { borderRadius: 8, padding: 16, paddingTop: 34, marginVertical: 8, position: 'relative' },

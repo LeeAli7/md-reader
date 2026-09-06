@@ -1,15 +1,10 @@
-// 50 Google Fonts for reading
+// 15 Google Fonts для чтения — ровно те, что грузятся в App.tsx.
+// Family-ключ = имя без пробелов (Open Sans → OpenSans), см. ReaderScreen.
 export const fonts = [
   'Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat',
-  'PT Serif', 'Merriweather', 'Source Serif Pro', 'Playfair Display', 'Libre Baskerville',
-  'Nunito', 'Poppins', 'Raleway', 'Work Sans', 'Rubik',
-  'Fira Code', 'JetBrains Mono', 'Source Code Pro', 'IBM Plex Mono', 'Ubuntu Mono',
-  'Noto Serif', 'Crimson Text', 'EB Garamond', 'Spectral', 'Bitter',
-  'Karla', 'Quicksand', 'DM Sans', 'Manrope', 'Outfit',
-  'Space Grotesk', 'Plus Jakarta Sans', 'Figtree', 'Satoshi', 'General Sans',
-  'Atkinson Hyperlegible', 'Lexend', 'Readable', 'Atkinson', 'Literata',
-  'Newsreader', 'Fraunces', 'Cormorant Garamond', 'Lora', 'Vollkorn',
-  'Zilla Slab', 'Arvo', 'Old Standard TT', 'Alegreya', 'Cardo',
+  'Merriweather', 'Fira Code',
+  'Lora', 'Playfair Display', 'PT Serif', 'Source Serif Pro',
+  'Nunito', 'Poppins', 'Raleway', 'JetBrains Mono',
 ] as const;
 
 export type FontName = typeof fonts[number];
