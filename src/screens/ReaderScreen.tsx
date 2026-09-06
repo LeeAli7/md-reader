@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet,
-  Modal, FlatList, Alert, NativeSyntheticEvent, NativeScrollEvent,
+  View, Text, Pressable, StyleSheet,
+  Modal, FlatList, NativeSyntheticEvent, NativeScrollEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +14,7 @@ import { useAppSettingsOpt } from '../context/AppSettingsContext';
 import { CodeBlock } from '../components/CodeBlock';
 import { ReaderTOC, Heading } from '../components/ReaderTOC';
 import { ReadingProgressBar } from '../components/ReadingProgressBar';
+import { OverflowMenu, type MenuAction } from '../components/OverflowMenu';
 
 interface Props {
   route: any;
@@ -38,17 +39,55 @@ function nodeText(node: any): string {
   return '';
 }
 
+interface Chunk {
+  text: string;
+  start: number;
+}
+
+// Режем по строкам (~150/чанк), заборы ``` не разрываем — иначе Markdown-парсер
+// каждого чанка ломается, а это и есть причина фризов на больших файлах:
+// один гигантский <Markdown> парсит и кладёт всё разом.
+const LINES_PER_CHUNK = 150;
+
+function splitMarkdown(md: string): Chunk[] {
+  if (!md) return [];
+  const lines = md.split('\n');
+  const chunks: Chunk[] = [];
+  let cur: string[] = [];
+  let start = 0;
+  let offset = 0;
+  let inFence = false;
+  const push = () => {
+    if (cur.length === 0) return;
+    chunks.push({ text: cur.join('\n'), start });
+    offset += cur.join('\n').length + 1;
+    cur = [];
+    start = offset;
+  };
+  for (const line of lines) {
+    if (line.trimStart().startsWith('```')) inFence = !inFence;
+    cur.push(line);
+    if (cur.length >= LINES_PER_CHUNK && !inFence) push();
+  }
+  push();
+  return chunks.length > 0 ? chunks : [{ text: md, start: 0 }];
+}
+
+const ChunkView = React.memo(function ChunkView({ text, mdStyle, rules }: { text: string; mdStyle: any; rules: any }) {
+  return <Markdown rules={rules} style={mdStyle}>{text}</Markdown>;
+});
+
 export default function ReaderScreen({ route, navigation }: Props) {
   const { uri, title } = route.params;
   const { theme } = useTheme();
   const appSettings = useAppSettingsOpt();
   const insets = useSafeAreaInsets();
-  const scrollRef = useRef<ScrollView>(null);
+  const listRef = useRef<FlatList>(null);
   const [content, setContent] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [showTOC, setShowTOC] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [contentHeight, setContentHeight] = useState(1);
   const [wordCount, setWordCount] = useState(0);
   const [readTime, setReadTime] = useState(0);
 
@@ -74,45 +113,79 @@ export default function ReaderScreen({ route, navigation }: Props) {
   }, [uri]);
 
   const headings = useMemo(() => parseHeadings(content), [content]);
+  const chunks = useMemo(() => splitMarkdown(content), [content]);
 
   const rt = readingThemes[selectedTheme] || readingThemes.default;
   const isDarkReading = rt.text === '#C9D1D9' || rt.text === '#E7E5E4' || rt.text === '#F8F8F2' || rt.text === '#586E75';
+
+  // Один источник истины: family-ключ = имя из theme/fonts.ts без пробелов,
+  // грузится в App.tsx под тем же ключом.
+  const fontFamily = selectedFont.replace(/\s+/g, '');
+
+  const rules = useMemo(() => ({
+    fence: (node: any) => <CodeBlock key={node.key} code={nodeText(node)} rt={rt} />,
+    code_block: (node: any) => <CodeBlock key={node.key} code={nodeText(node)} rt={rt} />,
+  }), [rt]);
+
+  const mdStyle = useMemo(() => ({
+    body: {
+      color: rt.text, fontSize,
+      lineHeight: fontSize * lineHeight,
+      fontFamily,
+    },
+    heading1: { color: rt.text, fontSize: fontSize * 1.8, fontWeight: '700', marginBottom: 12 },
+    heading2: { color: rt.text, fontSize: fontSize * 1.5, fontWeight: '600', marginBottom: 10 },
+    heading3: { color: rt.text, fontSize: fontSize * 1.25, fontWeight: '600', marginBottom: 8 },
+    link: { color: isDarkReading ? '#60A5FA' : '#2563EB' },
+    code_inline: {
+      backgroundColor: isDarkReading ? rt.text + '15' : rt.text + '0A',
+      color: rt.text, fontSize: fontSize * 0.9, borderRadius: 4,
+      paddingHorizontal: 6, paddingVertical: 2,
+    },
+    blockquote: {
+      borderLeftColor: isDarkReading ? '#60A5FA' : '#2563EB',
+      borderLeftWidth: 3,
+      paddingLeft: 14,
+      marginLeft: 0,
+      marginVertical: 10,
+      backgroundColor: isDarkReading ? rt.text + '08' : rt.text + '05',
+      paddingVertical: 10,
+      paddingRight: 12,
+      borderRadius: 0,
+    },
+    hr: { backgroundColor: rt.text + '20', height: 1, marginVertical: 16 },
+    list_item: { color: rt.text, fontSize, lineHeight: fontSize * lineHeight },
+    strong: { fontWeight: '700' as const, color: rt.text },
+    em: { fontStyle: 'italic' as const, color: rt.text },
+  }), [rt, fontSize, lineHeight, fontFamily, isDarkReading]);
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     const max = Math.max(1, contentSize.height - layoutMeasurement.height);
     setProgress(Math.max(0, Math.min(1, contentOffset.y / max)));
-    setContentHeight(Math.max(1, contentSize.height));
   };
 
   const jumpToHeading = (h: Heading) => {
     setShowTOC(false);
-    const y = Math.max(0, (h.charIndex / Math.max(1, content.length)) * contentHeight - 80);
-    setTimeout(() => scrollRef.current?.scrollTo({ y, animated: true }), 100);
+    let idx = 0;
+    chunks.forEach((c, i) => { if (c.start <= h.charIndex) idx = i; });
+    setTimeout(() => {
+      try {
+        listRef.current?.scrollToIndex({ index: idx, viewPosition: 0, animated: true });
+      } catch {}
+    }, 100);
   };
 
   const openEditor = () => {
     navigation.navigate('Editor', { uri, title });
   };
 
-  const fontFamily =
-    selectedFont === 'Inter' ? 'Inter' :
-    selectedFont === 'Roboto' ? 'Roboto' :
-    selectedFont === 'Merriweather' ? 'Merriweather' :
-    selectedFont === 'Fira Code' ? 'FiraCode' :
-    selectedFont === 'Open Sans' ? 'OpenSans' :
-    selectedFont === 'Lato' ? 'Lato' :
-    selectedFont === 'Montserrat' ? 'Montserrat' : undefined;
-
-  const rules = {
-    fence: (node: any) => <CodeBlock key={node.key} code={nodeText(node)} rt={rt} />,
-    code_block: (node: any) => <CodeBlock key={node.key} code={nodeText(node)} rt={rt} />,
-    table: (node: any, children: any) => (
-      <ScrollView key={node.key} horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
-        <View>{children}</View>
-      </ScrollView>
-    ),
-  };
+  const menuActions: MenuAction[] = [];
+  if (headings.length > 0) {
+    menuActions.push({ icon: 'list-outline', label: 'Оглавление', onPress: () => setShowTOC(true) });
+  }
+  menuActions.push({ icon: 'pencil-outline', label: 'Редактировать', onPress: openEditor });
+  menuActions.push({ icon: 'settings-outline', label: 'Настройки чтения', onPress: () => setShowSettings(true) });
 
   const s = styles(insets);
 
@@ -123,72 +196,29 @@ export default function ReaderScreen({ route, navigation }: Props) {
           <Ionicons name="chevron-back" size={24} color={rt.text} />
         </Pressable>
         <Text style={[s.title, { color: rt.text }]} numberOfLines={1}>{title}</Text>
-        <View style={s.topActions}>
-          <Text style={[s.meta, { color: rt.text + '60' }]}>
-            {wordCount} слов · ~{readTime} мин
-          </Text>
-          {headings.length > 0 && (
-            <Pressable onPress={() => setShowTOC(true)} style={s.iconBtn}>
-              <Ionicons name="list-outline" size={22} color={rt.text} />
-            </Pressable>
-          )}
-          <Pressable onPress={openEditor} style={s.iconBtn}>
-            <Ionicons name="pencil-outline" size={22} color={rt.text} />
-          </Pressable>
-          <Pressable onPress={() => setShowSettings(true)} style={s.iconBtn}>
-            <Ionicons name="settings-outline" size={22} color={rt.text} />
-          </Pressable>
-        </View>
+        <Text style={[s.meta, { color: rt.text + '60' }]}>
+          {wordCount} сл. · ~{readTime} мин
+        </Text>
+        <Pressable onPress={() => setShowMenu(true)} style={s.iconBtn}>
+          <Ionicons name="ellipsis-vertical" size={22} color={rt.text} />
+        </Pressable>
       </View>
       <ReadingProgressBar progress={progress} color={theme.accent} />
 
-      <ScrollView
-        ref={scrollRef}
+      <FlatList
+        ref={listRef}
+        data={chunks}
+        keyExtractor={(_, i) => String(i)}
         style={s.scroll}
         contentContainerStyle={[s.content, { maxWidth: contentWidth, alignSelf: 'center', width: '100%' }]}
+        renderItem={({ item }) => <ChunkView text={item.text} mdStyle={mdStyle} rules={rules} />}
         onScroll={onScroll}
         scrollEventThrottle={16}
-      >
-        <Markdown
-          rules={rules as any}
-          style={{
-            body: {
-              color: rt.text, fontSize,
-              lineHeight: fontSize * lineHeight,
-              ...(fontFamily ? { fontFamily } : {}),
-            },
-            heading1: { color: rt.text, fontSize: fontSize * 1.8, fontWeight: '700', marginBottom: 12 },
-            heading2: { color: rt.text, fontSize: fontSize * 1.5, fontWeight: '600', marginBottom: 10 },
-            heading3: { color: rt.text, fontSize: fontSize * 1.25, fontWeight: '600', marginBottom: 8 },
-            link: { color: isDarkReading ? '#60A5FA' : '#2563EB' },
-            code_inline: {
-              backgroundColor: isDarkReading ? rt.text + '15' : rt.text + '0A',
-              color: rt.text, fontSize: fontSize * 0.9, borderRadius: 4,
-              paddingHorizontal: 6, paddingVertical: 2,
-            },
-            blockquote: {
-              borderLeftColor: isDarkReading ? '#60A5FA' : '#2563EB',
-              borderLeftWidth: 3,
-              paddingLeft: 14,
-              marginLeft: 0,
-              marginVertical: 10,
-              backgroundColor: isDarkReading ? rt.text + '08' : rt.text + '05',
-              paddingVertical: 10,
-              paddingRight: 12,
-              borderRadius: 0,
-            },
-            table: { borderWidth: 1, borderColor: rt.text + '20', borderRadius: 8, marginVertical: 8 },
-            th: { backgroundColor: rt.text + '08', padding: 8, borderBottomWidth: 1, borderColor: rt.text + '20' },
-            td: { padding: 8, borderBottomWidth: 0.5, borderColor: rt.text + '10' },
-            hr: { backgroundColor: rt.text + '20', height: 1, marginVertical: 16 },
-            list_item: { color: rt.text, fontSize, lineHeight: fontSize * lineHeight },
-            strong: { fontWeight: '700' as const, color: rt.text },
-            em: { fontStyle: 'italic' as const, color: rt.text },
-          }}
-        >
-          {content}
-        </Markdown>
-      </ScrollView>
+        removeClippedSubviews={true}
+        initialNumToRender={2}
+        maxToRenderPerBatch={2}
+        windowSize={5}
+      />
 
       <ReaderTOC
         visible={showTOC}
@@ -198,6 +228,15 @@ export default function ReaderScreen({ route, navigation }: Props) {
         rtBg={rt.bg}
         onClose={() => setShowTOC(false)}
         onSelect={jumpToHeading}
+      />
+
+      <OverflowMenu
+        visible={showMenu}
+        title={title}
+        actions={menuActions}
+        theme={theme}
+        accentText={rt.text}
+        onClose={() => setShowMenu(false)}
       />
 
       <Modal visible={showSettings} transparent animationType="slide">
@@ -294,7 +333,6 @@ function styles(insets: any) {
     },
     backBtn: { padding: 8 },
     title: { flex: 1, fontSize: 16, fontWeight: '600', marginHorizontal: 4 },
-    topActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     meta: { fontSize: 12 },
     iconBtn: { padding: 8 },
     scroll: { flex: 1 },

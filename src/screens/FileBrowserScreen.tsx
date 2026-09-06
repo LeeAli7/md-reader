@@ -11,6 +11,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { FileTypeIcon } from '../components/FileTypeIcon';
 import { TagChips } from '../components/TagChips';
+import { OverflowMenu, type MenuAction } from '../components/OverflowMenu';
+
+declare const require: any;
 
 // Метаданные (избранное / недавние / теги) — единый слой src/utils/metaStore.ts, ключи md2_*.
 
@@ -61,6 +64,10 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [tagFor, setTagFor] = useState<FileEntry | null>(null);
   const [tagInput, setTagInput] = useState('');
+  const [menuFor, setMenuFor] = useState<FileEntry | null>(null);
+  const [showMove, setShowMove] = useState(false);
+  const [moveDest, setMoveDest] = useState('');
+  const [moveSingle, setMoveSingle] = useState(false);
 
   const loadDir = useCallback(async (path: string) => {
     try {
@@ -109,6 +116,49 @@ export default function FileBrowserScreen({ navigation }: Props) {
     try {
       setRecent(await storePushRecent(entry.uri, entry.name));
     } catch {}
+  };
+
+  const recordRecentByUri = async (uri: string, title: string) => {
+    try {
+      const list = await storePushRecent(uri, title);
+      setRecent(list);
+    } catch {}
+  };
+
+  // Вычистить uri из меты: сначала removeFile стора (когда есть у Ареса),
+  // локальное зеркало чистим всегда — включая вложенные при удалении папки.
+  const purgeMeta = async (uri: string) => {
+    const prefix = uri.endsWith('/') ? uri : uri + '/';
+    try {
+      const store: any = require('../utils/metaStore');
+      if (store && typeof store.removeFile === 'function') {
+        await store.removeFile(uri);
+      }
+    } catch {}
+    setFavs((prev) => prev.filter((u) => u !== uri && !u.startsWith(prefix)));
+    setRecent((prev) => prev.filter((r) => r.uri !== uri && !r.uri.startsWith(prefix)));
+    setTags((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((k) => {
+        if (k === uri || k.startsWith(prefix)) delete next[k];
+      });
+      return next;
+    });
+  };
+
+  // Открытие из Избранного/Недавних: битые записи чистим сразу, без экрана ошибки.
+  const openStoredFile = async (uri: string, title: string) => {
+    try {
+      const info = await FileSystem.getInfoAsync(uri);
+      if (!info.exists) {
+        await purgeMeta(uri);
+        await loadMeta();
+        Alert.alert('Файл удалён', 'Убрал его из избранного и истории.');
+        return;
+      }
+    } catch {}
+    recordRecentByUri(uri, title);
+    navigation.navigate('Reader', { uri, title });
   };
 
   const toggleFav = async (uri: string) => {
@@ -168,11 +218,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
     });
   };
 
-  const startSelecting = (uri: string) => {
-    setIsSelecting(true);
-    setSelected(new Set([uri]));
-  };
-
   const cancelSelecting = () => {
     setIsSelecting(false);
     setSelected(new Set());
@@ -189,9 +234,11 @@ export default function FileBrowserScreen({ navigation }: Props) {
           onPress: async () => {
             for (const uri of selected) {
               await FileSystem.deleteAsync(uri, { idempotent: true });
+              await purgeMeta(uri);
             }
             cancelSelecting();
             loadDir(currentPath);
+            loadMeta();
           },
         },
       ],
@@ -238,7 +285,9 @@ export default function FileBrowserScreen({ navigation }: Props) {
           text: 'Удалить', style: 'destructive',
           onPress: async () => {
             await FileSystem.deleteAsync(entry.uri, { idempotent: true });
+            await purgeMeta(entry.uri);
             loadDir(currentPath);
+            loadMeta();
           },
         },
       ],
@@ -262,6 +311,72 @@ export default function FileBrowserScreen({ navigation }: Props) {
     const entry = { name, uri: path, isDir: false, modifiedAt: Date.now() / 1000 };
     recordRecent(entry);
     navigation.navigate('Reader', { uri: path, title: name });
+  };
+
+  // Папки-кандидаты для перемещения: родитель + подпапки текущей (кроме выбранных и их вложенных).
+  const moveTargets = React.useMemo(() => {
+    const sel = [...selected];
+    const insideSel = (uri: string) => sel.some((s) => uri === s || uri.startsWith(s.endsWith('/') ? s : s + '/'));
+    const out: { label: string; path: string }[] = [];
+    if (currentPath !== MD_READER_DIR) {
+      out.push({ label: '↑ На уровень выше', path: currentPath.replace(/[^/]+\/$/, '') });
+    }
+    for (const e of entries) {
+      if (e.isDir && !insideSel(e.uri + '/')) out.push({ label: e.name, path: e.uri + '/' });
+    }
+    return out;
+  }, [entries, selected, currentPath]);
+
+  const moveSelected = async () => {
+    if (!moveDest || selected.size === 0) return;
+    const dest = moveDest.endsWith('/') ? moveDest : moveDest + '/';
+    for (const uri of selected) {
+      const clean = uri.endsWith('/') ? uri.slice(0, -1) : uri;
+      const base = clean.split('/').pop() || 'file';
+      if (dest === currentPath && selected.size === 1) continue;
+      let target = dest + base;
+      let n = 1;
+      while (n < 50) {
+        const info = await FileSystem.getInfoAsync(target);
+        if (!info.exists) break;
+        const dot = base.lastIndexOf('.');
+        const stem = dot > 0 ? base.slice(0, dot) : base;
+        const ext = dot > 0 ? base.slice(dot) : '';
+        target = `${dest}${stem} (${n})${ext}`;
+        n++;
+      }
+      try {
+        await FileSystem.moveAsync({ from: uri, to: target });
+        await purgeMeta(uri);
+      } catch (e) {
+        console.warn('move error:', e);
+      }
+    }
+    setShowMove(false);
+    setMoveDest('');
+    setMoveSingle(false);
+    cancelSelecting();
+    loadDir(currentPath);
+    loadMeta();
+  };
+
+  // ⋮-меню файла/папки: все действия в одном месте.
+  const fileMenuActions = (entry: FileEntry): MenuAction[] => {
+    const isFav = favs.includes(entry.uri);
+    const acts: MenuAction[] = [];
+    if (entry.isDir) {
+      acts.push({ icon: 'folder-open-outline', label: 'Открыть', onPress: () => setCurrentPath(entry.uri + '/') });
+    } else {
+      acts.push({ icon: 'document-text-outline', label: 'Открыть', onPress: () => openEntry(entry) });
+      acts.push(isFav
+        ? { icon: 'star', label: 'Убрать из избранного', onPress: () => toggleFav(entry.uri) }
+        : { icon: 'star-outline', label: 'В избранное', onPress: () => toggleFav(entry.uri) });
+      acts.push({ icon: 'pricetag-outline', label: 'Теги…', onPress: () => setTagFor(entry) });
+    }
+    acts.push({ icon: 'pencil-outline', label: 'Переименовать…', onPress: () => { setShowRename(entry); setRenameName(entry.name.replace(/\.md$/, '')); } });
+    acts.push({ icon: 'folder-outline', label: 'Переместить…', onPress: () => { setSelected(new Set([entry.uri])); setIsSelecting(true); setMoveSingle(true); setMoveDest(''); setShowMove(true); } });
+    acts.push({ icon: 'trash-outline', label: 'Удалить', danger: true, onPress: () => deleteEntry(entry) });
+    return acts;
   };
 
   // Фильтр + сортировка для вкладки Файлы
@@ -301,11 +416,10 @@ export default function FileBrowserScreen({ navigation }: Props) {
 
   const renderItem = ({ item }: { item: FileEntry }) => {
     const isSelected = selected.has(item.uri);
-    const isFav = favs.includes(item.uri);
     return (
       <Pressable
         onPress={() => navigateTo(item)}
-        onLongPress={() => startSelecting(item.uri)}
+        onLongPress={() => setMenuFor(item)}
         style={[s.item, isSelected && { backgroundColor: theme.accent + '15' }, { borderBottomColor: theme.divider }]}
       >
         {isSelecting && (
@@ -329,25 +443,10 @@ export default function FileBrowserScreen({ navigation }: Props) {
           )}
           {!item.isDir && <TagChips tags={(tags[item.uri] || []).slice(0, 3)} theme={theme} />}
         </View>
-        {!isSelecting && !item.isDir && (
-          <Pressable onPress={() => toggleFav(item.uri)} hitSlop={8} style={s.itemBtn}>
-            <Ionicons name={isFav ? 'star' : 'star-outline'} size={18} color={isFav ? '#F59E0B' : theme.textSecondary} />
-          </Pressable>
-        )}
         {!isSelecting && (
-          <View style={s.itemActions}>
-            {!item.isDir && (
-              <Pressable onPress={() => setTagFor(item)} hitSlop={8} style={s.itemBtn}>
-                <Ionicons name="pricetag-outline" size={18} color={theme.textSecondary} />
-              </Pressable>
-            )}
-            <Pressable onPress={() => { setShowRename(item); setRenameName(item.name.replace(/\.md$/, '')); }} hitSlop={8} style={s.itemBtn}>
-              <Ionicons name="pencil-outline" size={18} color={theme.textSecondary} />
-            </Pressable>
-            <Pressable onPress={() => deleteEntry(item)} hitSlop={8} style={s.itemBtn}>
-              <Ionicons name="trash-outline" size={18} color={theme.textSecondary} />
-            </Pressable>
-          </View>
+          <Pressable onPress={() => setMenuFor(item)} hitSlop={8} style={s.itemBtn}>
+            <Ionicons name="ellipsis-vertical" size={18} color={theme.textSecondary} />
+          </Pressable>
         )}
       </Pressable>
     );
@@ -365,14 +464,24 @@ export default function FileBrowserScreen({ navigation }: Props) {
           {isSelecting ? `${selected.size} выбрано` : (pathParts.length > 0 ? pathParts[pathParts.length - 1] : 'Мои файлы')}
         </Text>
         {isSelecting ? (
-          <Pressable onPress={deleteSelected} style={s.iconBtn} disabled={selected.size === 0}>
-            <Ionicons name="trash" size={22} color={selected.size > 0 ? '#EF4444' : theme.border} />
-          </Pressable>
+          <View style={s.headerActions}>
+            <Pressable onPress={() => { setMoveDest(''); setShowMove(true); }} style={s.iconBtn} disabled={selected.size === 0}>
+              <Ionicons name="folder-outline" size={22} color={selected.size > 0 ? theme.accent : theme.border} />
+            </Pressable>
+            <Pressable onPress={deleteSelected} style={s.iconBtn} disabled={selected.size === 0}>
+              <Ionicons name="trash" size={22} color={selected.size > 0 ? '#EF4444' : theme.border} />
+            </Pressable>
+          </View>
         ) : (
           <View style={s.headerActions}>
             <Pressable onPress={() => setShowSort(!showSort)} style={s.iconBtn}>
               <Ionicons name="swap-vertical-outline" size={22} color={theme.accent} />
             </Pressable>
+            {tab === 'files' && (
+              <Pressable onPress={() => { setIsSelecting(true); setSelected(new Set()); }} style={s.iconBtn}>
+                <Ionicons name="checkmark-circle-outline" size={22} color={theme.accent} />
+              </Pressable>
+            )}
             <Pressable onPress={createNewFile} style={s.iconBtn}>
               <Ionicons name="document-text-outline" size={22} color={theme.accent} />
             </Pressable>
@@ -480,7 +589,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
             keyExtractor={(item) => item.uri}
             contentContainerStyle={s.list}
             renderItem={({ item }) => (
-              <Pressable onPress={() => navigation.navigate('Reader', { uri: item.uri, title: item.name })} style={[s.item, { borderBottomColor: theme.divider }]}>
+              <Pressable onPress={() => openStoredFile(item.uri, item.name)} style={[s.item, { borderBottomColor: theme.divider }]}>
                 <FileTypeIcon name={item.name} theme={theme} />
                 <View style={s.info}>
                   <Text style={[s.name, { color: theme.text }]} numberOfLines={1}>{item.name}</Text>
@@ -508,7 +617,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
             keyExtractor={(item) => item.uri}
             contentContainerStyle={s.list}
             renderItem={({ item }) => (
-              <Pressable onPress={() => navigation.navigate('Reader', { uri: item.uri, title: item.title })} style={[s.item, { borderBottomColor: theme.divider }]}>
+              <Pressable onPress={() => openStoredFile(item.uri, item.title)} style={[s.item, { borderBottomColor: theme.divider }]}>
                 <FileTypeIcon name={item.title} theme={theme} />
                 <View style={s.info}>
                   <Text style={[s.name, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
@@ -526,7 +635,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
             <View style={s.empty}>
               <Ionicons name="pricetag-outline" size={64} color={theme.border} />
               <Text style={[s.emptyText, { color: theme.textSecondary }]}>Тегов пока нет</Text>
-              <Text style={[s.emptyHint, { color: theme.textSecondary }]}>Нажмите на ценник у файла, чтобы добавить тег</Text>
+              <Text style={[s.emptyHint, { color: theme.textSecondary }]}>Откройте ⋮ у файла, чтобы добавить тег</Text>
             </View>
           ) : (
             <FlatList
@@ -657,6 +766,62 @@ export default function FileBrowserScreen({ navigation }: Props) {
           </View>
         </View>
       </Modal>
+
+      {/* Move Modal */}
+      <Modal visible={showMove} transparent animationType="fade">
+        <View style={s.modalOverlay}>
+          <View style={[s.modal, { backgroundColor: theme.surface, maxWidth: 360 }]}>
+            <Text style={[s.modalTitle, { color: theme.text }]}>Переместить ({selected.size})</Text>
+            {moveTargets.length === 0 ? (
+              <Text style={[s.meta, { color: theme.textSecondary, marginBottom: 16 }]}>
+                Некуда перемещать — создайте папку
+              </Text>
+            ) : (
+              <FlatList
+                data={moveTargets}
+                keyExtractor={(t) => t.path}
+                style={{ maxHeight: 260, marginBottom: 12 }}
+                renderItem={({ item: t }) => {
+                  const active = moveDest === t.path;
+                  return (
+                    <Pressable
+                      onPress={() => setMoveDest(t.path)}
+                      style={[s.moveRow, { backgroundColor: active ? theme.accentSoft : 'transparent' }]}
+                    >
+                      <Ionicons name={t.label.startsWith('↑') ? 'arrow-up-outline' : 'folder-outline'} size={18} color={active ? theme.accent : theme.textSecondary} />
+                      <Text style={[s.moveLabel, { color: active ? theme.accent : theme.text }]} numberOfLines={1}>
+                        {t.label}
+                      </Text>
+                      {active && <Ionicons name="checkmark" size={18} color={theme.accent} />}
+                    </Pressable>
+                  );
+                }}
+              />
+            )}
+            <View style={s.modalActions}>
+              <Pressable onPress={() => { setShowMove(false); setMoveDest(''); if (moveSingle) { setMoveSingle(false); cancelSelecting(); } }} style={s.modalBtn}>
+                <Text style={[s.modalBtnText, { color: theme.textSecondary }]}>Отмена</Text>
+              </Pressable>
+              <Pressable
+                onPress={moveSelected}
+                disabled={!moveDest}
+                style={[s.modalBtn, { backgroundColor: moveDest ? theme.accent : theme.border }]}
+              >
+                <Text style={[s.modalBtnText, { color: '#FFF' }]}>Сюда</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ⋮-меню файла/папки */}
+      <OverflowMenu
+        visible={!!menuFor}
+        title={menuFor?.name}
+        actions={menuFor ? fileMenuActions(menuFor) : []}
+        theme={theme}
+        onClose={() => setMenuFor(null)}
+      />
     </View>
   );
 }
@@ -727,5 +892,7 @@ function styles(theme: any, insets: any) {
     existingTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
     tagPill: { borderWidth: 1, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
     tagPillText: { fontSize: 12 },
+    moveRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 10, borderRadius: 10 },
+    moveLabel: { flex: 1, fontSize: 15 },
   });
 }

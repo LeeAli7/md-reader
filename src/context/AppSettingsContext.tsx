@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { defaultSizes } from '../theme/fonts';
+import { fonts as FONT_LIST } from '../theme/fonts';
 
 export type ThemeMode = 'light' | 'dark' | 'auto';
 
@@ -75,7 +76,8 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
         setS({
           themeMode: tm === 'light' || tm === 'dark' ? tm : tm === 'auto' ? 'auto' : DEFAULTS.themeMode,
           readingTheme: rt || DEFAULTS.readingTheme,
-          font: f || DEFAULTS.font,
+          // Миграция со старого списка из 50: неизвестное имя → Inter
+          font: f && (FONT_LIST as readonly string[]).includes(f) ? f : DEFAULTS.font,
           fontSize: fs ? Number(fs) || DEFAULTS.fontSize : DEFAULTS.fontSize,
           lineHeight: lh ? Number(lh) || DEFAULTS.lineHeight : DEFAULTS.lineHeight,
           contentWidth: cw ? Number(cw) || DEFAULTS.contentWidth : DEFAULTS.contentWidth,

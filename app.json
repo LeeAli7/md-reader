@@ -2,5 +2,12 @@
   "plugins": [
     "expo-asset",
     "expo-font"
-  ]
+  ],
+  "icon": "./assets/icon.png",
+  "android": {
+    "adaptiveIcon": {
+      "foregroundImage": "./assets/adaptive-icon.png",
+      "backgroundColor": "#0D1117"
+    }
+  }
 }
