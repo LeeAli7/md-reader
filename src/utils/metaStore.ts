@@ -120,3 +120,61 @@ export async function searchByTag(tag: string): Promise<string[]> {
     .filter(([, tags]) => tags.includes(t))
     .map(([uri]) => uri);
 }
+
+// ---- Deletion / hygiene ----
+
+/**
+ * Fully forget a file: drops uri from favorites, recent and tags.
+ * Call it right after FileSystem.deleteAsync so dead entries
+ * never surface in Favorites / Recent / Tags tabs.
+ */
+export async function removeFile(uri: string): Promise<void> {
+  const [favs, recent, map] = await Promise.all([
+    getFavorites(),
+    getRecent(),
+    getTagMap(),
+  ]);
+  let touched = false;
+  if (favs.includes(uri)) {
+    await writeJSON(KEYS.favorites, favs.filter(u => u !== uri));
+    touched = true;
+  }
+  if (recent.some(e => e.uri === uri)) {
+    await writeJSON(KEYS.recent, recent.filter(e => e.uri !== uri));
+    touched = true;
+  }
+  if (map[uri] !== undefined) {
+    delete map[uri];
+    await writeJSON(KEYS.tags, map);
+    touched = true;
+  }
+  void touched;
+}
+
+/**
+ * Drop all stored uris for which exists(uri) is false.
+ * Pass FileSystem.getInfoAsync-based check from the UI layer
+ * (this module stays FS-free). Returns removed uri count.
+ */
+export async function pruneMissing(exists: (uri: string) => Promise<boolean>): Promise<number> {
+  const [favs, recent, map] = await Promise.all([
+    getFavorites(),
+    getRecent(),
+    getTagMap(),
+  ]);
+  const uris = new Set<string>([...favs, ...recent.map(e => e.uri), ...Object.keys(map)]);
+  let removed = 0;
+  for (const uri of uris) {
+    let ok = true;
+    try {
+      ok = await exists(uri);
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      await removeFile(uri);
+      removed++;
+    }
+  }
+  return removed;
+}
