@@ -384,7 +384,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
                   </Pressable>
                   {!splitUri && item.uri !== mainUri && (
                     <Pressable onPress={() => openSplit(item.uri, item.title)} hitSlop={8} style={s.iconBtn}>
-                      <Ionicons name="columns-outline" size={20} color={theme.accent} />
+                      <Ionicons name="copy-outline" size={20} color={theme.accent} />
                     </Pressable>
                   )}
                 </View>
