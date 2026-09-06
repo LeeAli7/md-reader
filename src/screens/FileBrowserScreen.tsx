@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
-import { getFavorites, toggleFavorite, getRecent, pushRecent as storePushRecent, getTagMap, setTags as storeSetTags, type RecentEntry } from '../utils/metaStore';
+import { getFavorites, toggleFavorite, getRecent, pushRecent as storePushRecent, getTagMap, setTags as storeSetTags, removeFile as storeRemoveFile, type RecentEntry } from '../utils/metaStore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
@@ -125,15 +125,12 @@ export default function FileBrowserScreen({ navigation }: Props) {
     } catch {}
   };
 
-  // Вычистить uri из меты: сначала removeFile стора (когда есть у Ареса),
-  // локальное зеркало чистим всегда — включая вложенные при удалении папки.
+  // Вычистить uri из меты: removeFile стора + локальное зеркало
+  // (зеркало покрывает и вложенные пути при удалении папки).
   const purgeMeta = async (uri: string) => {
     const prefix = uri.endsWith('/') ? uri : uri + '/';
     try {
-      const store: any = require('../utils/metaStore');
-      if (store && typeof store.removeFile === 'function') {
-        await store.removeFile(uri);
-      }
+      await storeRemoveFile(uri);
     } catch {}
     setFavs((prev) => prev.filter((u) => u !== uri && !u.startsWith(prefix)));
     setRecent((prev) => prev.filter((r) => r.uri !== uri && !r.uri.startsWith(prefix)));
