@@ -1,20 +1,22 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View, Text, Pressable, StyleSheet,
-  Modal, FlatList, NativeSyntheticEvent, NativeScrollEvent,
+  Modal, FlatList, NativeSyntheticEvent, NativeScrollEvent, Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
 import * as FileSystem from 'expo-file-system';
+import { getRecent, pushRecent, type RecentEntry } from '../utils/metaStore';
 import { useTheme } from '../hooks/useTheme';
 import { readingThemes } from '../theme/tokens';
 import { fonts } from '../theme/fonts';
-import { useAppSettingsOpt } from '../context/AppSettingsContext';
+import { useReadingStyle } from '../context/AppSettingsContext';
 import { CodeBlock } from '../components/CodeBlock';
 import { ReaderTOC, Heading } from '../components/ReaderTOC';
 import { ReadingProgressBar } from '../components/ReadingProgressBar';
-import { OverflowMenu, type MenuAction } from '../components/OverflowMenu';
+import { Popover } from '../components/Popover';
+import type { MenuAction } from '../components/OverflowMenu';
 
 interface Props {
   route: any;
@@ -23,10 +25,10 @@ interface Props {
 
 function parseHeadings(md: string): Heading[] {
   const out: Heading[] = [];
-  const re = /^(#{1,3})\s+(.+)$/gm;
+  const re = /^(#{1,6})\s+(.+)$/gm;
   let m: RegExpExecArray | null;
   while ((m = re.exec(md)) !== null) {
-    out.push({ level: m[1].length, title: m[2].trim(), charIndex: m.index });
+    out.push({ level: Math.min(3, m[1].length), title: m[2].trim(), charIndex: m.index });
   }
   return out;
 }
@@ -44,9 +46,7 @@ interface Chunk {
   start: number;
 }
 
-// Режем по строкам (~150/чанк), заборы ``` не разрываем — иначе Markdown-парсер
-// каждого чанка ломается, а это и есть причина фризов на больших файлах:
-// один гигантский <Markdown> парсит и кладёт всё разом.
+// Режем по строкам (~150/чанк), заборы ``` не разрываем.
 const LINES_PER_CHUNK = 150;
 
 function splitMarkdown(md: string): Chunk[] {
@@ -73,91 +73,146 @@ function splitMarkdown(md: string): Chunk[] {
   return chunks.length > 0 ? chunks : [{ text: md, start: 0 }];
 }
 
+function useDoc(uri: string) {
+  const [content, setContent] = useState('');
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!uri) { setContent(''); return; }
+    (async () => {
+      try {
+        setContent(await FileSystem.readAsStringAsync(uri));
+      } catch {
+        setContent('# Ошибка чтения файла\n\nНе удалось открыть файл.');
+      }
+    })();
+  }, [uri, tick]);
+  const reload = useCallback(() => setTick((t) => t + 1), []);
+  const headings = useMemo(() => parseHeadings(content), [content]);
+  const chunks = useMemo(() => splitMarkdown(content), [content]);
+  const stats = useMemo(() => {
+    const words = content.split(/\s+/).filter(Boolean).length;
+    return { words, readTime: Math.max(1, Math.ceil(words / 200)) };
+  }, [content]);
+  return { content, headings, chunks, stats, reload };
+}
+
 const ChunkView = React.memo(function ChunkView({ text, mdStyle, rules }: { text: string; mdStyle: any; rules: any }) {
   return <Markdown rules={rules} style={mdStyle}>{text}</Markdown>;
 });
 
 export default function ReaderScreen({ route, navigation }: Props) {
-  const { uri, title } = route.params;
+  const [mainUri, setMainUri] = useState<string>(route.params?.uri ?? '');
+  const [mainTitle, setMainTitle] = useState<string>(route.params?.title ?? '');
+  const [splitUri, setSplitUri] = useState<string | null>(null);
+  const [splitTitle, setSplitTitle] = useState('');
   const { theme } = useTheme();
-  const appSettings = useAppSettingsOpt();
+  const rs = useReadingStyle();
+  const { fontSize, lineHeight, fontFamily, contentWidth, readingTheme, remountKey, app } = rs;
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList>(null);
-  const [content, setContent] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [showTOC, setShowTOC] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [menuAt, setMenuAt] = useState({ x: 0, y: 0 });
+  const [showRecent, setShowRecent] = useState(false);
+  const [showUI, setShowUI] = useState(true);
   const [progress, setProgress] = useState(0);
-  const [wordCount, setWordCount] = useState(0);
-  const [readTime, setReadTime] = useState(0);
+  const [recent, setRecent] = useState<RecentEntry[]>([]);
+  const touchY = useRef(0);
 
-  // Настройки чтения из AppContext (Settings правит то же место).
-  const fontSize = appSettings?.fontSize ?? 16;
-  const lineHeight = appSettings?.lineHeight ?? 1.7;
-  const selectedFont = appSettings?.font ?? 'Inter';
-  const selectedTheme = appSettings?.readingTheme ?? 'default';
-  const contentWidth = appSettings?.contentWidth ?? 720;
+  const main = useDoc(mainUri);
+  const split = useDoc(splitUri ?? '');
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const text = await FileSystem.readAsStringAsync(uri);
-        setContent(text);
-        const words = text.split(/\s+/).filter(Boolean).length;
-        setWordCount(words);
-        setReadTime(Math.max(1, Math.ceil(words / 200)));
-      } catch {
-        setContent('# Ошибка чтения файла\n\nНе удалось открыть файл.');
-      }
-    })();
-  }, [uri]);
-
-  const headings = useMemo(() => parseHeadings(content), [content]);
-  const chunks = useMemo(() => splitMarkdown(content), [content]);
-
-  const rt = readingThemes[selectedTheme] || readingThemes.default;
+  const rt = readingThemes[readingTheme] || readingThemes.default;
   const isDarkReading = rt.text === '#C9D1D9' || rt.text === '#E7E5E4' || rt.text === '#F8F8F2' || rt.text === '#586E75';
 
-  // Один источник истины: family-ключ = имя из theme/fonts.ts без пробелов,
-  // грузится в App.tsx под тем же ключом.
-  const fontFamily = selectedFont.replace(/\s+/g, '');
+  const loadRecent = useCallback(async () => {
+    try { setRecent(await getRecent()); } catch {}
+  }, []);
+
+  // Перечитываем файл при возврате из редактора — правки видны сразу.
+  useEffect(() => {
+    const unsub = navigation.addListener('focus', () => {
+      main.reload();
+      if (splitUri) split.reload();
+      loadRecent();
+    });
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigation, mainUri, splitUri]);
+
+  useEffect(() => { loadRecent(); }, [loadRecent]);
+
+  const openMain = async (uri: string, title: string) => {
+    setMainUri(uri);
+    setMainTitle(title);
+    setShowRecent(false);
+    try { setRecent(await pushRecent(uri, title)); } catch {}
+  };
+
+  const openSplit = async (uri: string, title: string) => {
+    if (uri === mainUri) return;
+    setSplitUri(uri);
+    setSplitTitle(title);
+    setShowRecent(false);
+    try { setRecent(await pushRecent(uri, title)); } catch {}
+  };
 
   const rules = useMemo(() => ({
     fence: (node: any) => <CodeBlock key={node.key} code={nodeText(node)} rt={rt} />,
     code_block: (node: any) => <CodeBlock key={node.key} code={nodeText(node)} rt={rt} />,
   }), [rt]);
 
-  const mdStyle = useMemo(() => ({
-    body: {
-      color: rt.text, fontSize,
-      lineHeight: fontSize * lineHeight,
-      fontFamily,
-    },
-    heading1: { color: rt.text, fontSize: fontSize * 1.8, fontWeight: '700', marginBottom: 12 },
-    heading2: { color: rt.text, fontSize: fontSize * 1.5, fontWeight: '600', marginBottom: 10 },
-    heading3: { color: rt.text, fontSize: fontSize * 1.25, fontWeight: '600', marginBottom: 8 },
-    link: { color: isDarkReading ? '#60A5FA' : '#2563EB' },
-    code_inline: {
-      backgroundColor: isDarkReading ? rt.text + '15' : rt.text + '0A',
-      color: rt.text, fontSize: fontSize * 0.9, borderRadius: 4,
-      paddingHorizontal: 6, paddingVertical: 2,
-    },
-    blockquote: {
-      borderLeftColor: isDarkReading ? '#60A5FA' : '#2563EB',
-      borderLeftWidth: 3,
-      paddingLeft: 14,
-      marginLeft: 0,
-      marginVertical: 10,
-      backgroundColor: isDarkReading ? rt.text + '08' : rt.text + '05',
-      paddingVertical: 10,
-      paddingRight: 12,
-      borderRadius: 0,
-    },
-    hr: { backgroundColor: rt.text + '20', height: 1, marginVertical: 16 },
-    list_item: { color: rt.text, fontSize, lineHeight: fontSize * lineHeight },
-    strong: { fontWeight: '700' as const, color: rt.text },
-    em: { fontStyle: 'italic' as const, color: rt.text },
-  }), [rt, fontSize, lineHeight, fontFamily, isDarkReading]);
+  // Явная лесенка H1–H6: размер + жирность + отступы, каши нет.
+  const mdStyle = useMemo(() => {
+    const h = (scale: number, weight: '700' | '600', mt: number, mb: number) => ({
+      color: rt.text, fontSize: fontSize * scale, fontWeight: weight, marginTop: mt, marginBottom: mb,
+    });
+    const cellBorder = rt.text + '35';
+    return {
+      body: {
+        color: rt.text, fontSize,
+        lineHeight: fontSize * lineHeight,
+        fontFamily,
+      },
+      paragraph: { marginVertical: 7 },
+      heading1: h(1.9, '700', 18, 12),
+      heading2: h(1.6, '700', 16, 10),
+      heading3: h(1.35, '600', 14, 8),
+      heading4: h(1.15, '600', 12, 6),
+      heading5: h(1.0, '600', 10, 6),
+      heading6: { color: rt.text + 'AA', fontSize: fontSize * 0.9, fontWeight: '600', marginTop: 10, marginBottom: 6 },
+      link: { color: isDarkReading ? '#60A5FA' : '#2563EB' },
+      code_inline: {
+        backgroundColor: isDarkReading ? rt.text + '15' : rt.text + '0A',
+        color: rt.text, fontSize: fontSize * 0.9, borderRadius: 4,
+        paddingHorizontal: 6, paddingVertical: 2,
+      },
+      blockquote: {
+        borderLeftColor: isDarkReading ? '#60A5FA' : '#2563EB',
+        borderLeftWidth: 3,
+        paddingLeft: 14,
+        marginLeft: 0,
+        marginVertical: 10,
+        backgroundColor: isDarkReading ? rt.text + '08' : rt.text + '05',
+        paddingVertical: 10,
+        paddingRight: 12,
+        borderRadius: 0,
+      },
+      table: { borderWidth: 1, borderColor: cellBorder, borderRadius: 8, marginVertical: 8 },
+      thead: {},
+      tbody: {},
+      th: { backgroundColor: rt.text + '08', padding: 8, borderBottomWidth: 1, borderRightWidth: 1, borderColor: cellBorder },
+      td: { padding: 8, borderBottomWidth: 0.5, borderRightWidth: 1, borderColor: cellBorder },
+      tr: { borderBottomWidth: 0 },
+      hr: { backgroundColor: rt.text + '20', height: 1, marginVertical: 16 },
+      list_item: { color: rt.text, fontSize, lineHeight: fontSize * lineHeight },
+      bullet_list: { marginVertical: 6 },
+      ordered_list: { marginVertical: 6 },
+      strong: { fontWeight: '700' as const, color: rt.text },
+      em: { fontStyle: 'italic' as const, color: rt.text },
+    };
+  }, [rt, fontSize, lineHeight, fontFamily, isDarkReading]);
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
@@ -168,7 +223,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const jumpToHeading = (h: Heading) => {
     setShowTOC(false);
     let idx = 0;
-    chunks.forEach((c, i) => { if (c.start <= h.charIndex) idx = i; });
+    main.chunks.forEach((c, i) => { if (c.start <= h.charIndex) idx = i; });
     setTimeout(() => {
       try {
         listRef.current?.scrollToIndex({ index: idx, viewPosition: 0, animated: true });
@@ -177,52 +232,121 @@ export default function ReaderScreen({ route, navigation }: Props) {
   };
 
   const openEditor = () => {
-    navigation.navigate('Editor', { uri, title });
+    navigation.navigate('Editor', { uri: mainUri, title: mainTitle });
+  };
+
+  const openMenuAt = (e: any) => {
+    const { pageX, pageY } = e.nativeEvent ?? {};
+    const { width: SW } = Dimensions.get('window');
+    setMenuAt({
+      x: (typeof pageX === 'number' ? pageX : SW) - 256,
+      y: (typeof pageY === 'number' ? pageY : 0) + 8,
+    });
+    setShowMenu(true);
   };
 
   const menuActions: MenuAction[] = [];
-  if (headings.length > 0) {
+  if (main.headings.length > 0) {
     menuActions.push({ icon: 'list-outline', label: 'Оглавление', onPress: () => setShowTOC(true) });
   }
   menuActions.push({ icon: 'pencil-outline', label: 'Редактировать', onPress: openEditor });
+  if (!splitUri) {
+    menuActions.push({ icon: 'columns-outline', label: 'Второй документ рядом', onPress: () => setShowRecent(true) });
+  }
+  menuActions.push({ icon: 'layers-outline', label: 'Быстрое переключение', onPress: () => setShowRecent(true) });
+  menuActions.push(showUI
+    ? { icon: 'eye-off-outline', label: 'Скрыть интерфейс', onPress: () => setShowUI(false) }
+    : { icon: 'eye-outline', label: 'Показать интерфейс', onPress: () => setShowUI(true) });
   menuActions.push({ icon: 'settings-outline', label: 'Настройки чтения', onPress: () => setShowSettings(true) });
 
   const s = styles(insets);
 
+  const renderPane = (
+    chunks: Chunk[],
+    title: string,
+    isSplit: boolean,
+    onCloseSplit?: () => void,
+    onSwap?: () => void,
+  ) => (
+    <View style={[s.pane, isSplit && { borderLeftWidth: 1, borderLeftColor: rt.text + '20' }]}>
+      {isSplit && (
+        <View style={[s.splitBar, { backgroundColor: rt.bg, borderBottomColor: rt.text + '15' }]}>
+          <Text style={[s.splitTitle, { color: rt.text }]} numberOfLines={1}>{title}</Text>
+          {onSwap && (
+            <Pressable onPress={onSwap} hitSlop={8} style={s.iconBtn}>
+              <Ionicons name="swap-horizontal-outline" size={18} color={rt.text} />
+            </Pressable>
+          )}
+          <Pressable onPress={onCloseSplit} hitSlop={8} style={s.iconBtn}>
+            <Ionicons name="close" size={18} color={rt.text} />
+          </Pressable>
+        </View>
+      )}
+      <View
+        style={{ flex: 1 }}
+        onTouchStart={(e) => { touchY.current = e.nativeEvent.pageY; }}
+        onTouchEnd={(e) => {
+          // Тап без скролла — вкл/выкл иммерсив. Свайпы не трогаем.
+          if (Math.abs(e.nativeEvent.pageY - touchY.current) < 10) setShowUI((v) => !v);
+        }}
+      >
+        <FlatList
+          ref={isSplit ? undefined : listRef}
+          key={remountKey + (isSplit ? '|split' : '|main')}
+          data={chunks}
+          keyExtractor={(_, i) => String(i)}
+          style={s.scroll}
+          contentContainerStyle={[s.content, { maxWidth: contentWidth, alignSelf: 'center', width: '100%' }]}
+          renderItem={({ item }) => <ChunkView text={item.text} mdStyle={mdStyle} rules={rules} />}
+          onScroll={isSplit ? undefined : onScroll}
+          scrollEventThrottle={16}
+          removeClippedSubviews={true}
+          initialNumToRender={2}
+          maxToRenderPerBatch={2}
+          windowSize={5}
+        />
+      </View>
+    </View>
+  );
+
   return (
     <View style={[s.container, { backgroundColor: rt.bg }]}>
-      <View style={[s.topBar, { backgroundColor: rt.bg, borderBottomColor: rt.text + '15' }]}>
-        <Pressable onPress={() => navigation.goBack()} style={s.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={rt.text} />
-        </Pressable>
-        <Text style={[s.title, { color: rt.text }]} numberOfLines={1}>{title}</Text>
-        <Text style={[s.meta, { color: rt.text + '60' }]}>
-          {wordCount} сл. · ~{readTime} мин
-        </Text>
-        <Pressable onPress={() => setShowMenu(true)} style={s.iconBtn}>
-          <Ionicons name="ellipsis-vertical" size={22} color={rt.text} />
-        </Pressable>
-      </View>
-      <ReadingProgressBar progress={progress} color={theme.accent} />
+      {showUI && (
+        <>
+          <View style={[s.topBar, { backgroundColor: rt.bg, borderBottomColor: rt.text + '15' }]}>
+            <Pressable onPress={() => navigation.goBack()} style={s.backBtn}>
+              <Ionicons name="chevron-back" size={24} color={rt.text} />
+            </Pressable>
+            <Text style={[s.title, { color: rt.text }]} numberOfLines={1}>{mainTitle}</Text>
+            <Text style={[s.meta, { color: rt.text + '60' }]}>
+              {main.stats.words} сл. · ~{main.stats.readTime} мин
+            </Text>
+            <Pressable onPress={openMenuAt} style={s.iconBtn}>
+              <Ionicons name="ellipsis-vertical" size={22} color={rt.text} />
+            </Pressable>
+          </View>
+          <ReadingProgressBar progress={progress} color={theme.accent} />
+        </>
+      )}
 
-      <FlatList
-        ref={listRef}
-        data={chunks}
-        keyExtractor={(_, i) => String(i)}
-        style={s.scroll}
-        contentContainerStyle={[s.content, { maxWidth: contentWidth, alignSelf: 'center', width: '100%' }]}
-        renderItem={({ item }) => <ChunkView text={item.text} mdStyle={mdStyle} rules={rules} />}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        removeClippedSubviews={true}
-        initialNumToRender={2}
-        maxToRenderPerBatch={2}
-        windowSize={5}
-      />
+      <View style={{ flex: 1, flexDirection: splitUri ? 'row' : 'column' }}>
+        {renderPane(main.chunks, mainTitle, false)}
+        {splitUri && renderPane(
+          split.chunks,
+          splitTitle,
+          true,
+          () => setSplitUri(null),
+          () => {
+            const u = mainUri, t = mainTitle;
+            setMainUri(splitUri); setMainTitle(splitTitle);
+            setSplitUri(u); setSplitTitle(t);
+          },
+        )}
+      </View>
 
       <ReaderTOC
         visible={showTOC}
-        headings={headings}
+        headings={main.headings}
         theme={theme}
         rtText={rt.text}
         rtBg={rt.bg}
@@ -230,14 +354,45 @@ export default function ReaderScreen({ route, navigation }: Props) {
         onSelect={jumpToHeading}
       />
 
-      <OverflowMenu
+      <Popover
         visible={showMenu}
-        title={title}
-        actions={menuActions}
+        x={menuAt.x}
+        y={menuAt.y}
+        title={mainTitle}
         theme={theme}
-        accentText={rt.text}
         onClose={() => setShowMenu(false)}
+        actions={menuActions}
       />
+
+      {/* Быстрое переключение + второй документ */}
+      <Modal visible={showRecent} transparent animationType="slide" onRequestClose={() => setShowRecent(false)}>
+        <View style={s.sheetOverlay}>
+          <Pressable style={s.sheetBackdrop} onPress={() => setShowRecent(false)} />
+          <View style={[s.sheet, { backgroundColor: theme.surface }]}>
+            <View style={s.sheetHandle} />
+            <Text style={[s.sheetTitle, { color: theme.text }]}>Недавние документы</Text>
+            <FlatList
+              data={recent}
+              keyExtractor={(item) => item.uri}
+              renderItem={({ item }) => (
+                <View style={[s.recentRow, { borderBottomColor: theme.divider }]}>
+                  <Pressable onPress={() => openMain(item.uri, item.title)} style={{ flex: 1 }}>
+                    <Text style={[s.recentName, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
+                    <Text style={[s.recentMeta, { color: theme.textSecondary }]}>
+                      {new Date(item.ts).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                  </Pressable>
+                  {!splitUri && item.uri !== mainUri && (
+                    <Pressable onPress={() => openSplit(item.uri, item.title)} hitSlop={8} style={s.iconBtn}>
+                      <Ionicons name="columns-outline" size={20} color={theme.accent} />
+                    </Pressable>
+                  )}
+                </View>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={showSettings} transparent animationType="slide">
         <View style={s.sheetOverlay}>
@@ -248,26 +403,26 @@ export default function ReaderScreen({ route, navigation }: Props) {
 
             <Text style={[s.label, { color: theme.textSecondary }]}>Размер шрифта: {fontSize}px</Text>
             <View style={s.sliderRow}>
-              <Pressable onPress={() => appSettings?.setFontSize(Math.max(12, fontSize - 1))}>
+              <Pressable onPress={() => app?.setFontSize(Math.max(12, fontSize - 1))}>
                 <Ionicons name="remove-circle-outline" size={28} color={theme.accent} />
               </Pressable>
               <View style={[s.sliderTrack, { backgroundColor: theme.border }]}>
                 <View style={[s.sliderFill, { width: `${((fontSize - 12) / 16) * 100}%`, backgroundColor: theme.accent }]} />
               </View>
-              <Pressable onPress={() => appSettings?.setFontSize(Math.min(28, fontSize + 1))}>
+              <Pressable onPress={() => app?.setFontSize(Math.min(28, fontSize + 1))}>
                 <Ionicons name="add-circle-outline" size={28} color={theme.accent} />
               </Pressable>
             </View>
 
             <Text style={[s.label, { color: theme.textSecondary }]}>Межстрочный: {lineHeight.toFixed(1)}</Text>
             <View style={s.sliderRow}>
-              <Pressable onPress={() => appSettings?.setLineHeight(Math.max(1.2, +(lineHeight - 0.1).toFixed(1)))}>
+              <Pressable onPress={() => app?.setLineHeight(Math.max(1.2, +(lineHeight - 0.1).toFixed(1)))}>
                 <Ionicons name="remove-circle-outline" size={28} color={theme.accent} />
               </Pressable>
               <View style={[s.sliderTrack, { backgroundColor: theme.border }]}>
                 <View style={[s.sliderFill, { width: `${((lineHeight - 1.2) / 1.3) * 100}%`, backgroundColor: theme.accent }]} />
               </View>
-              <Pressable onPress={() => appSettings?.setLineHeight(Math.min(2.5, +(lineHeight + 0.1).toFixed(1)))}>
+              <Pressable onPress={() => app?.setLineHeight(Math.min(2.5, +(lineHeight + 0.1).toFixed(1)))}>
                 <Ionicons name="add-circle-outline" size={28} color={theme.accent} />
               </Pressable>
             </View>
@@ -281,10 +436,10 @@ export default function ReaderScreen({ route, navigation }: Props) {
               contentContainerStyle={{ gap: 8, paddingVertical: 8 }}
               renderItem={({ item: [key, rt2] }) => (
                 <Pressable
-                  onPress={() => appSettings?.setReadingTheme(key)}
+                  onPress={() => app?.setReadingTheme(key)}
                   style={[
                     s.themeChip,
-                    { backgroundColor: rt2.bg, borderColor: selectedTheme === key ? theme.accent : rt2.text + '20' },
+                    { backgroundColor: rt2.bg, borderColor: readingTheme === key ? theme.accent : rt2.text + '20' },
                   ]}
                 >
                   <Text style={{ color: rt2.text, fontSize: 12, fontWeight: '500' }}>{rt2.name}</Text>
@@ -301,11 +456,11 @@ export default function ReaderScreen({ route, navigation }: Props) {
               contentContainerStyle={{ gap: 8, paddingVertical: 8 }}
               renderItem={({ item: f }) => (
                 <Pressable
-                  onPress={() => appSettings?.setFont(f)}
+                  onPress={() => app?.setFont(f)}
                   style={[
                     s.fontChip,
-                    { borderColor: selectedFont === f ? theme.accent : theme.border },
-                    { backgroundColor: selectedFont === f ? theme.accentSoft : 'transparent' },
+                    { borderColor: rs.font === f ? theme.accent : theme.border },
+                    { backgroundColor: rs.font === f ? theme.accentSoft : 'transparent' },
                   ]}
                 >
                   <Text style={{ color: theme.text, fontSize: 12 }}>{f}</Text>
@@ -337,6 +492,12 @@ function styles(insets: any) {
     iconBtn: { padding: 8 },
     scroll: { flex: 1 },
     content: { padding: 20, paddingBottom: 100 },
+    pane: { flex: 1 },
+    splitBar: {
+      flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8,
+      paddingTop: insets.top > 0 ? 4 : 8, paddingBottom: 4, borderBottomWidth: 1,
+    },
+    splitTitle: { flex: 1, fontSize: 13, fontWeight: '600', marginHorizontal: 4 },
     sheetOverlay: { flex: 1, justifyContent: 'flex-end' },
     sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
     sheet: {
@@ -347,7 +508,10 @@ function styles(insets: any) {
       width: 36, height: 4, borderRadius: 2, backgroundColor: '#CCC',
       alignSelf: 'center', marginBottom: 16,
     },
-    sheetTitle: { fontSize: 18, fontWeight: '600', marginBottom: 20 },
+    sheetTitle: { fontSize: 18, fontWeight: '600', marginBottom: 12 },
+    recentRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+    recentName: { fontSize: 15, fontWeight: '500' },
+    recentMeta: { fontSize: 12, marginTop: 2 },
     label: { fontSize: 13, fontWeight: '500', marginBottom: 8 },
     sliderRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
     sliderTrack: { flex: 1, height: 4, borderRadius: 2, overflow: 'hidden' },

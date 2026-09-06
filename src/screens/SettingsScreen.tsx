@@ -14,7 +14,7 @@ const MODES: { key: ThemeMode; label: string; icon: string }[] = [
   { key: 'auto', label: 'Авто', icon: 'contrast-outline' },
 ];
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ navigation }: any) {
   const { theme, isDark, mode, setMode } = useTheme();
   const app = useAppSettingsOpt();
   const insets = useSafeAreaInsets();
@@ -30,7 +30,12 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
-      <Text style={s.heading}>Настройки</Text>
+      <View style={s.headRow}>
+        <Pressable onPress={() => navigation?.goBack()} style={s.backBtn}>
+          <Ionicons name="chevron-back" size={24} color={theme.text} />
+        </Pressable>
+        <Text style={s.heading}>Настройки</Text>
+      </View>
 
       {/* Тема приложения */}
       <Text style={s.sectionTitle}>Оформление</Text>
@@ -93,7 +98,9 @@ export default function SettingsScreen() {
         <Pressable onPress={() => step(() => app?.setFontSize(Math.max(12, fontSize - 1)))} style={[s.stepBtn, { borderColor: theme.border }]}>
           <Ionicons name="remove" size={20} color={theme.text} />
         </Pressable>
-        <Text style={[s.preview, { color: theme.text, fontSize }]}>Пример текста для чтения</Text>
+        <Text style={[s.preview, { color: theme.text, fontSize, lineHeight: fontSize * lineHeight, fontFamily: selectedFont.replace(/\s+/g, '') }]}>
+          Пример текста для чтения — так будет выглядеть файл
+        </Text>
         <Pressable onPress={() => step(() => app?.setFontSize(Math.min(28, fontSize + 1)))} style={[s.stepBtn, { borderColor: theme.border }]}>
           <Ionicons name="add" size={20} color={theme.text} />
         </Pressable>
@@ -148,7 +155,9 @@ function styles(theme: any, insets: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.bg },
     content: { padding: 20, paddingTop: insets.top + 20, paddingBottom: 60 },
-    heading: { fontSize: 24, fontWeight: '700', color: theme.text, marginBottom: 20 },
+    headRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, marginLeft: -8 },
+    backBtn: { padding: 8 },
+    heading: { fontSize: 24, fontWeight: '700', color: theme.text },
     sectionTitle: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
     hint: { fontSize: 12, color: theme.textSecondary, marginTop: 8 },
     modeRow: { flexDirection: 'row', gap: 10 },

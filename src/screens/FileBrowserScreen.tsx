@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, FlatList, Pressable, StyleSheet, Alert,
-  TextInput, Modal,
+  TextInput, Modal, Dimensions, NativeSyntheticEvent, NativeTouchEvent,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
@@ -11,11 +11,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { FileTypeIcon } from '../components/FileTypeIcon';
 import { TagChips } from '../components/TagChips';
-import { OverflowMenu, type MenuAction } from '../components/OverflowMenu';
+import { Popover } from '../components/Popover';
+import type { MenuAction } from '../components/OverflowMenu';
 
 declare const require: any;
 
-// Метаданные (избранное / недавние / теги) — единый слой src/utils/metaStore.ts, ключи md2_*.
+// Метаданные — единый слой src/utils/metaStore.ts, ключи md2_*.
 
 export interface FileEntry {
   name: string;
@@ -29,17 +30,59 @@ interface Props {
   navigation: any;
 }
 
-type Tab = 'files' | 'fav' | 'recent' | 'tags';
+type Tab = 'files' | 'recent';
 type SortKey = 'name' | 'date' | 'size';
+type SearchScope = 'files' | 'tags' | 'fav';
 
-const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'files', label: 'Файлы', icon: 'folder-outline' },
-  { key: 'fav', label: 'Избранное', icon: 'star-outline' },
-  { key: 'recent', label: 'Недавние', icon: 'time-outline' },
-  { key: 'tags', label: 'Теги', icon: 'pricetag-outline' },
-];
+interface FolderNode {
+  name: string;
+  uri: string;
+  children: FolderNode[];
+}
 
 const MD_READER_DIR = FileSystem.documentDirectory + 'md-reader/';
+
+// Дерево папок: getFolderTree движка, если уже есть у Ареса, иначе строим сами.
+async function loadFolderTree(): Promise<FolderNode[] | null> {
+  for (const mod of ['../utils/folderTree', '../utils/fileSystem', '../utils/fileTypes']) {
+    try {
+      const eng: any = require(mod);
+      if (eng && typeof eng.getFolderTree === 'function') {
+        const tree = await eng.getFolderTree();
+        if (Array.isArray(tree)) return tree as FolderNode[];
+      }
+    } catch {}
+  }
+  return null;
+}
+
+async function scanTree(path: string, depth: number): Promise<FolderNode[]> {
+  if (depth <= 0) return [];
+  try {
+    const items = await FileSystem.readDirectoryAsync(path);
+    const out: FolderNode[] = [];
+    for (const name of items) {
+      const uri = path + name;
+      const info = await FileSystem.getInfoAsync(uri);
+      if (info.isDirectory) {
+        out.push({ name, uri: uri + '/', children: await scanTree(uri + '/', depth - 1) });
+      }
+    }
+    out.sort((a, b) => a.name.localeCompare(b.name));
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function flattenTree(nodes: FolderNode[], depth: number): { node: FolderNode; depth: number }[] {
+  const out: { node: FolderNode; depth: number }[] = [];
+  for (const n of nodes) {
+    out.push({ node: n, depth });
+    out.push(...flattenTree(n.children, depth + 1));
+  }
+  return out;
+}
 
 export default function FileBrowserScreen({ navigation }: Props) {
   const { theme } = useTheme();
@@ -52,22 +95,31 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const [renameName, setRenameName] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isSelecting, setIsSelecting] = useState(false);
-  // Фаза «лицо»: табы, поиск, сортировка, избранное, недавние, теги
   const [tab, setTab] = useState<Tab>('files');
-  const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortAsc, setSortAsc] = useState(true);
   const [showSort, setShowSort] = useState(false);
   const [favs, setFavs] = useState<string[]>([]);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
   const [tags, setTags] = useState<Record<string, string[]>>({});
-  const [activeTag, setActiveTag] = useState<string | null>(null);
   const [tagFor, setTagFor] = useState<FileEntry | null>(null);
   const [tagInput, setTagInput] = useState('');
-  const [menuFor, setMenuFor] = useState<FileEntry | null>(null);
+  // ⋮-попап у кнопки: точка нажатия
+  const [pop, setPop] = useState<{ x: number; y: number; entry: FileEntry } | null>(null);
+  const [showFab, setShowFab] = useState(false);
+  const [fabAt, setFabAt] = useState({ x: 0, y: 0 });
+  // Поиск-оверлей
+  const [showSearch, setShowSearch] = useState(false);
+  const [query, setQuery] = useState('');
+  const [scope, setScope] = useState<SearchScope>('files');
+  const [searchTag, setSearchTag] = useState<string | null>(null);
+  // Перемещение
   const [showMove, setShowMove] = useState(false);
   const [moveDest, setMoveDest] = useState('');
   const [moveSingle, setMoveSingle] = useState(false);
+  const [movePath, setMovePath] = useState(MD_READER_DIR);
+  const [moveTree, setMoveTree] = useState<FolderNode[] | null>(null);
+  const [moveSubs, setMoveSubs] = useState<FileEntry[]>([]);
 
   const loadDir = useCallback(async (path: string) => {
     try {
@@ -118,10 +170,9 @@ export default function FileBrowserScreen({ navigation }: Props) {
     } catch {}
   };
 
-  const recordRecentByUri = async (uri: string, title: string) => {
+  const toggleFav = async (uri: string) => {
     try {
-      const list = await storePushRecent(uri, title);
-      setRecent(list);
+      setFavs(await toggleFavorite(uri));
     } catch {}
   };
 
@@ -143,7 +194,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
     });
   };
 
-  // Открытие из Избранного/Недавних: битые записи чистим сразу, без экрана ошибки.
   const openStoredFile = async (uri: string, title: string) => {
     try {
       const info = await FileSystem.getInfoAsync(uri);
@@ -154,14 +204,10 @@ export default function FileBrowserScreen({ navigation }: Props) {
         return;
       }
     } catch {}
-    recordRecentByUri(uri, title);
-    navigation.navigate('Reader', { uri, title });
-  };
-
-  const toggleFav = async (uri: string) => {
     try {
-      setFavs(await toggleFavorite(uri));
+      setRecent(await storePushRecent(uri, title));
     } catch {}
+    navigation.navigate('Reader', { uri, title });
   };
 
   const addTag = async () => {
@@ -194,9 +240,19 @@ export default function FileBrowserScreen({ navigation }: Props) {
     navigation.navigate('Reader', { uri: entry.uri, title: entry.name });
   };
 
+  const startSelecting = (uri: string) => {
+    setIsSelecting(true);
+    setSelected(new Set([uri]));
+  };
+
   const navigateTo = (entry: FileEntry) => {
     if (isSelecting) {
-      toggleSelect(entry.uri);
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(entry.uri)) next.delete(entry.uri);
+        else next.add(entry.uri);
+        return next;
+      });
       return;
     }
     if (entry.isDir) {
@@ -204,15 +260,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
     } else {
       openEntry(entry);
     }
-  };
-
-  const toggleSelect = (uri: string) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(uri)) next.delete(uri);
-      else next.add(uri);
-      return next;
-    });
   };
 
   const cancelSelecting = () => {
@@ -310,19 +357,41 @@ export default function FileBrowserScreen({ navigation }: Props) {
     navigation.navigate('Reader', { uri: path, title: name });
   };
 
-  // Папки-кандидаты для перемещения: родитель + подпапки текущей (кроме выбранных и их вложенных).
-  const moveTargets = React.useMemo(() => {
-    const sel = [...selected];
-    const insideSel = (uri: string) => sel.some((s) => uri === s || uri.startsWith(s.endsWith('/') ? s : s + '/'));
-    const out: { label: string; path: string }[] = [];
-    if (currentPath !== MD_READER_DIR) {
-      out.push({ label: '↑ На уровень выше', path: currentPath.replace(/[^/]+\/$/, '') });
+  // --- Перемещение: дерево целиком + крошки, один заход ---
+  const openMove = async (single?: FileEntry) => {
+    if (single) {
+      setSelected(new Set([single.uri]));
+      setIsSelecting(true);
+      setMoveSingle(true);
+    } else {
+      setMoveSingle(false);
     }
-    for (const e of entries) {
-      if (e.isDir && !insideSel(e.uri + '/')) out.push({ label: e.name, path: e.uri + '/' });
+    setMoveDest('');
+    setMovePath(MD_READER_DIR);
+    setMoveTree(await loadFolderTree());
+    await refreshMoveSubs(MD_READER_DIR);
+    setShowMove(true);
+  };
+
+  const refreshMoveSubs = async (path: string) => {
+    try {
+      const items = await FileSystem.readDirectoryAsync(path);
+      const out: FileEntry[] = [];
+      for (const name of items) {
+        const info = await FileSystem.getInfoAsync(path + name);
+        if (info.isDirectory) out.push({ name, uri: path + name, isDir: true, modifiedAt: 0 });
+      }
+      out.sort((a, b) => a.name.localeCompare(b.name));
+      setMoveSubs(out);
+    } catch {
+      setMoveSubs([]);
     }
-    return out;
-  }, [entries, selected, currentPath]);
+  };
+
+  const navMovePath = (path: string) => {
+    setMovePath(path);
+    refreshMoveSubs(path);
+  };
 
   const moveSelected = async () => {
     if (!moveDest || selected.size === 0) return;
@@ -357,7 +426,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
     loadMeta();
   };
 
-  // ⋮-меню файла/папки: все действия в одном месте.
+  // ⋮-меню файла/папки — попап у кнопки.
   const fileMenuActions = (entry: FileEntry): MenuAction[] => {
     const isFav = favs.includes(entry.uri);
     const acts: MenuAction[] = [];
@@ -371,43 +440,54 @@ export default function FileBrowserScreen({ navigation }: Props) {
       acts.push({ icon: 'pricetag-outline', label: 'Теги…', onPress: () => setTagFor(entry) });
     }
     acts.push({ icon: 'pencil-outline', label: 'Переименовать…', onPress: () => { setShowRename(entry); setRenameName(entry.name.replace(/\.md$/, '')); } });
-    acts.push({ icon: 'folder-outline', label: 'Переместить…', onPress: () => { setSelected(new Set([entry.uri])); setIsSelecting(true); setMoveSingle(true); setMoveDest(''); setShowMove(true); } });
+    acts.push({ icon: 'folder-outline', label: 'Переместить…', onPress: () => openMove(entry) });
     acts.push({ icon: 'trash-outline', label: 'Удалить', danger: true, onPress: () => deleteEntry(entry) });
     return acts;
   };
 
-  // Фильтр + сортировка для вкладки Файлы
+  const openPop = (entry: FileEntry, e: NativeSyntheticEvent<NativeTouchEvent>) => {
+    const { pageX, pageY } = e.nativeEvent;
+    const { width: SW } = Dimensions.get('window');
+    setPop({
+      x: typeof pageX === 'number' ? pageX - 248 : SW - 256,
+      y: typeof pageY === 'number' ? pageY : 120,
+      entry,
+    });
+  };
+
+  // --- Списки ---
   const visibleEntries = React.useMemo(() => {
-    let list = entries;
-    const q = query.trim().toLowerCase();
-    if (q) list = list.filter((e) => e.name.toLowerCase().includes(q));
-    if (activeTag) list = list.filter((e) => (tags[e.uri] || []).includes(activeTag));
     const dir = sortAsc ? 1 : -1;
-    return [...list].sort((a, b) => {
+    return [...entries].sort((a, b) => {
       if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
       if (sortKey === 'date') return (a.modifiedAt - b.modifiedAt) * dir;
       if (sortKey === 'size') return ((a.size || 0) - (b.size || 0)) * dir;
       return a.name.localeCompare(b.name) * dir;
     });
-  }, [entries, query, activeTag, tags, sortKey, sortAsc]);
+  }, [entries, sortKey, sortAsc]);
 
-  const favEntries = React.useMemo(
-    () => favs.map((uri) => ({ uri, name: uri.split('/').pop() || uri })).filter((f) => !query || f.name.toLowerCase().includes(query.trim().toLowerCase())),
-    [favs, query]
-  );
-  const recentShown = React.useMemo(
-    () => recent.filter((r) => !query || r.title.toLowerCase().includes(query.trim().toLowerCase())),
-    [recent, query]
-  );
-  const allTags = React.useMemo(() => {
+  // --- Поиск: имя + теги + избранное ---
+  const q = query.trim().toLowerCase();
+  const searchFiles = React.useMemo(() => {
+    if (!q) return [];
+    let list = entries.filter((e) => !e.isDir && e.name.toLowerCase().includes(q));
+    if (scope === 'fav') list = list.filter((e) => favs.includes(e.uri));
+    if (scope === 'tags' && searchTag) list = list.filter((e) => (tags[e.uri] || []).includes(searchTag));
+    return list;
+  }, [entries, q, scope, favs, tags, searchTag]);
+  const searchTags = React.useMemo(() => {
     const set = new Set<string>();
-    Object.values(tags).forEach((arr) => arr.forEach((t) => set.add(t)));
+    Object.values(tags).forEach((arr) => arr.forEach((t) => { if (!q || t.includes(q)) set.add(t); }));
     return [...set].sort();
-  }, [tags]);
-  const tagFiles = React.useMemo(
-    () => (activeTag ? entries.filter((e) => (tags[e.uri] || []).includes(activeTag)) : []),
-    [activeTag, entries, tags]
-  );
+  }, [tags, q]);
+  const tagFiles = React.useMemo(() => {
+    if (!searchTag) return [];
+    const out: { uri: string; name: string }[] = [];
+    Object.entries(tags).forEach(([uri, arr]) => {
+      if (arr.includes(searchTag)) out.push({ uri, name: uri.split('/').pop() || uri });
+    });
+    return out;
+  }, [tags, searchTag]);
 
   const s = styles(theme, insets);
 
@@ -416,7 +496,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
     return (
       <Pressable
         onPress={() => navigateTo(item)}
-        onLongPress={() => setMenuFor(item)}
+        onLongPress={() => startSelecting(item.uri)}
         style={[s.item, isSelected && { backgroundColor: theme.accent + '15' }, { borderBottomColor: theme.divider }]}
       >
         {isSelecting && (
@@ -441,7 +521,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
           {!item.isDir && <TagChips tags={(tags[item.uri] || []).slice(0, 3)} theme={theme} />}
         </View>
         {!isSelecting && (
-          <Pressable onPress={() => setMenuFor(item)} hitSlop={8} style={s.itemBtn}>
+          <Pressable onPress={(e) => openPop(item, e)} hitSlop={10} style={s.itemBtn}>
             <Ionicons name="ellipsis-vertical" size={18} color={theme.textSecondary} />
           </Pressable>
         )}
@@ -449,20 +529,27 @@ export default function FileBrowserScreen({ navigation }: Props) {
     );
   };
 
+  const moveParts = movePath.replace(MD_READER_DIR, '').split('/').filter(Boolean);
+  const selInsideMove = [...selected].some((u) => movePath === u || movePath === u + '/' || movePath.startsWith(u.endsWith('/') ? u : u + '/'));
+  const flatTree = moveTree ? flattenTree(moveTree, 0) : [];
 
   return (
     <View style={s.container}>
-      {/* Header */}
+      {/* Header: назад только внутри папок / в мультивыборе */}
       <View style={s.header}>
-        <Pressable onPress={goBack} style={s.backBtn}>
-          <Ionicons name={isSelecting ? 'close' : 'chevron-back'} size={24} color={theme.text} />
-        </Pressable>
+        {(pathParts.length > 0 || isSelecting) ? (
+          <Pressable onPress={goBack} style={s.backBtn}>
+            <Ionicons name={isSelecting ? 'close' : 'chevron-back'} size={24} color={theme.text} />
+          </Pressable>
+        ) : (
+          <View style={s.backSpacer} />
+        )}
         <Text style={[s.title, { color: theme.text }]} numberOfLines={1}>
           {isSelecting ? `${selected.size} выбрано` : (pathParts.length > 0 ? pathParts[pathParts.length - 1] : 'Мои файлы')}
         </Text>
         {isSelecting ? (
           <View style={s.headerActions}>
-            <Pressable onPress={() => { setMoveDest(''); setShowMove(true); }} style={s.iconBtn} disabled={selected.size === 0}>
+            <Pressable onPress={() => openMove()} style={s.iconBtn} disabled={selected.size === 0}>
               <Ionicons name="folder-outline" size={22} color={selected.size > 0 ? theme.accent : theme.border} />
             </Pressable>
             <Pressable onPress={deleteSelected} style={s.iconBtn} disabled={selected.size === 0}>
@@ -471,45 +558,15 @@ export default function FileBrowserScreen({ navigation }: Props) {
           </View>
         ) : (
           <View style={s.headerActions}>
+            <Pressable onPress={() => { setQuery(''); setScope('files'); setSearchTag(null); setShowSearch(true); }} style={s.iconBtn}>
+              <Ionicons name="search-outline" size={22} color={theme.accent} />
+            </Pressable>
             <Pressable onPress={() => setShowSort(!showSort)} style={s.iconBtn}>
               <Ionicons name="swap-vertical-outline" size={22} color={theme.accent} />
-            </Pressable>
-            {tab === 'files' && (
-              <Pressable onPress={() => { setIsSelecting(true); setSelected(new Set()); }} style={s.iconBtn}>
-                <Ionicons name="checkmark-circle-outline" size={22} color={theme.accent} />
-              </Pressable>
-            )}
-            <Pressable onPress={createNewFile} style={s.iconBtn}>
-              <Ionicons name="document-text-outline" size={22} color={theme.accent} />
-            </Pressable>
-            <Pressable onPress={importFile} style={s.iconBtn}>
-              <Ionicons name="add-circle-outline" size={22} color={theme.accent} />
-            </Pressable>
-            <Pressable onPress={() => setShowNewFolder(true)} style={s.iconBtn}>
-              <Ionicons name="folder-outline" size={22} color={theme.accent} />
             </Pressable>
           </View>
         )}
       </View>
-
-      {/* Search */}
-      {!isSelecting && (
-        <View style={[s.searchRow, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
-          <Ionicons name="search-outline" size={18} color={theme.textSecondary} />
-          <TextInput
-            style={[s.searchInput, { color: theme.text }]}
-            placeholder="Поиск по имени…"
-            placeholderTextColor={theme.textSecondary}
-            value={query}
-            onChangeText={setQuery}
-          />
-          {query.length > 0 && (
-            <Pressable onPress={() => setQuery('')} hitSlop={8}>
-              <Ionicons name="close-circle" size={18} color={theme.textSecondary} />
-            </Pressable>
-          )}
-        </View>
-      )}
 
       {/* Sort bar */}
       {showSort && !isSelecting && (
@@ -550,17 +607,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
         </View>
       )}
 
-      {/* Active tag filter */}
-      {activeTag && (
-        <View style={[s.tagFilter, { backgroundColor: theme.accentSoft }]}>
-          <Text style={[s.tagFilterText, { color: theme.accent }]}>#{activeTag}</Text>
-          <Pressable onPress={() => setActiveTag(null)} hitSlop={8}>
-            <Ionicons name="close" size={16} color={theme.accent} />
-          </Pressable>
-        </View>
-      )}
-
-      {/* Content per tab */}
+      {/* Content */}
       {tab === 'files' && (
         visibleEntries.length === 0 ? (
           <View style={s.empty}>
@@ -573,36 +620,8 @@ export default function FileBrowserScreen({ navigation }: Props) {
         )
       )}
 
-      {tab === 'fav' && (
-        favEntries.length === 0 ? (
-          <View style={s.empty}>
-            <Ionicons name="star-outline" size={64} color={theme.border} />
-            <Text style={[s.emptyText, { color: theme.textSecondary }]}>Нет избранного</Text>
-            <Text style={[s.emptyHint, { color: theme.textSecondary }]}>Отмечайте файлы звездой</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={favEntries}
-            keyExtractor={(item) => item.uri}
-            contentContainerStyle={s.list}
-            renderItem={({ item }) => (
-              <Pressable onPress={() => openStoredFile(item.uri, item.name)} style={[s.item, { borderBottomColor: theme.divider }]}>
-                <FileTypeIcon name={item.name} theme={theme} />
-                <View style={s.info}>
-                  <Text style={[s.name, { color: theme.text }]} numberOfLines={1}>{item.name}</Text>
-                  <TagChips tags={(tags[item.uri] || []).slice(0, 3)} theme={theme} />
-                </View>
-                <Pressable onPress={() => toggleFav(item.uri)} hitSlop={8} style={s.itemBtn}>
-                  <Ionicons name="star" size={18} color="#F59E0B" />
-                </Pressable>
-              </Pressable>
-            )}
-          />
-        )
-      )}
-
       {tab === 'recent' && (
-        recentShown.length === 0 ? (
+        recent.length === 0 ? (
           <View style={s.empty}>
             <Ionicons name="time-outline" size={64} color={theme.border} />
             <Text style={[s.emptyText, { color: theme.textSecondary }]}>Пока пусто</Text>
@@ -610,7 +629,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
           </View>
         ) : (
           <FlatList
-            data={recentShown}
+            data={recent}
             keyExtractor={(item) => item.uri}
             contentContainerStyle={s.list}
             renderItem={({ item }) => (
@@ -626,28 +645,99 @@ export default function FileBrowserScreen({ navigation }: Props) {
         )
       )}
 
-      {tab === 'tags' && (
-        <View style={{ flex: 1 }}>
-          {allTags.length === 0 ? (
-            <View style={s.empty}>
-              <Ionicons name="pricetag-outline" size={64} color={theme.border} />
-              <Text style={[s.emptyText, { color: theme.textSecondary }]}>Тегов пока нет</Text>
-              <Text style={[s.emptyHint, { color: theme.textSecondary }]}>Откройте ⋮ у файла, чтобы добавить тег</Text>
-            </View>
-          ) : (
+      {/* Bottom tabs + FAB */}
+      <View style={[s.tabs, { backgroundColor: theme.surface, borderTopColor: theme.border, paddingBottom: insets.bottom + 8 }]}>
+        <Pressable onPress={() => setTab('files')} style={s.tabBtn}>
+          <Ionicons name={tab === 'files' ? 'folder' : 'folder-outline'} size={22} color={tab === 'files' ? theme.accent : theme.textSecondary} />
+          <Text style={[s.tabLabel, { color: tab === 'files' ? theme.accent : theme.textSecondary }]}>Файлы</Text>
+        </Pressable>
+        <Pressable onPress={() => setTab('recent')} style={s.tabBtn}>
+          <Ionicons name={tab === 'recent' ? 'time' : 'time-outline'} size={22} color={tab === 'recent' ? theme.accent : theme.textSecondary} />
+          <Text style={[s.tabLabel, { color: tab === 'recent' ? theme.accent : theme.textSecondary }]}>Недавние</Text>
+        </Pressable>
+        <Pressable onPress={() => navigation.navigate('Settings')} style={s.tabBtn}>
+          <Ionicons name="settings-outline" size={22} color={theme.textSecondary} />
+          <Text style={[s.tabLabel, { color: theme.textSecondary }]}>Настройки</Text>
+        </Pressable>
+      </View>
+      {tab === 'files' && !isSelecting && (
+        <Pressable
+          onPress={(e) => {
+            const { pageX, pageY } = e.nativeEvent;
+            const { width: SW, height: SH } = Dimensions.get('window');
+            setFabAt({
+              x: (typeof pageX === 'number' ? pageX : SW) - 256,
+              y: (typeof pageY === 'number' ? pageY : SH) - 320,
+            });
+            setShowFab(true);
+          }}
+          style={[s.fab, { backgroundColor: theme.accent, bottom: insets.bottom + 76 }]}
+        >
+          <Ionicons name="add" size={28} color="#FFF" />
+        </Pressable>
+      )}
+      <Popover
+        visible={showFab}
+        x={fabAt.x}
+        y={fabAt.y}
+        title="Создать"
+        theme={theme}
+        onClose={() => setShowFab(false)}
+        actions={[
+          { icon: 'document-text-outline', label: 'Новый файл', onPress: createNewFile },
+          { icon: 'folder-outline', label: 'Новая папка', onPress: () => setShowNewFolder(true) },
+          { icon: 'download-outline', label: 'Импорт из хранилища', onPress: importFile },
+        ]}
+      />
+
+      {/* ⋮-попап у кнопки */}
+      <Popover
+        visible={!!pop}
+        x={pop?.x ?? 0}
+        y={pop?.y ?? 0}
+        title={pop?.entry.name}
+        theme={theme}
+        onClose={() => setPop(null)}
+        actions={pop ? fileMenuActions(pop.entry) : []}
+      />
+
+      {/* Поиск-оверлей: имя + теги + избранное */}
+      <Modal visible={showSearch} animationType="slide" onRequestClose={() => setShowSearch(false)}>
+        <View style={[s.searchWrap, { backgroundColor: theme.bg, paddingTop: insets.top + 8 }]}>
+          <View style={s.searchBar}>
+            <Pressable onPress={() => setShowSearch(false)} style={s.iconBtn}>
+              <Ionicons name="chevron-back" size={24} color={theme.text} />
+            </Pressable>
+            <TextInput
+              style={[s.searchInputBig, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface }]}
+              placeholder="Имя, #тег…"
+              placeholderTextColor={theme.textSecondary}
+              value={query}
+              onChangeText={setQuery}
+              autoFocus
+            />
+          </View>
+          <View style={s.scopeRow}>
+            {([['files', 'Файлы'], ['tags', 'Теги'], ['fav', '★ Избранное']] as [SearchScope, string][]).map(([k, label]) => (
+              <Pressable
+                key={k}
+                onPress={() => { setScope(k); setSearchTag(null); }}
+                style={[s.scopeChip, scope === k && { backgroundColor: theme.accentSoft, borderColor: theme.accent }]}
+              >
+                <Text style={[s.scopeText, { color: scope === k ? theme.accent : theme.textSecondary }]}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {scope === 'tags' && !searchTag && (
             <FlatList
-              data={allTags}
+              data={searchTags}
               keyExtractor={(t) => t}
               contentContainerStyle={s.list}
               renderItem={({ item: t }) => {
                 const count = Object.values(tags).filter((arr) => arr.includes(t)).length;
-                const active = activeTag === t;
                 return (
-                  <Pressable
-                    onPress={() => { setActiveTag(active ? null : t); setTab(active ? 'tags' : 'files'); }}
-                    style={[s.tagRow, { borderBottomColor: theme.divider, backgroundColor: active ? theme.accentSoft : 'transparent' }]}
-                  >
-                    <Ionicons name="pricetag" size={18} color={active ? theme.accent : theme.textSecondary} />
+                  <Pressable onPress={() => setSearchTag(t)} style={[s.tagRow, { borderBottomColor: theme.divider }]}>
+                    <Ionicons name="pricetag" size={18} color={theme.textSecondary} />
                     <Text style={[s.tagName, { color: theme.text }]}>#{t}</Text>
                     <Text style={[s.meta, { color: theme.textSecondary }]}>{count}</Text>
                   </Pressable>
@@ -655,28 +745,78 @@ export default function FileBrowserScreen({ navigation }: Props) {
               }}
             />
           )}
-          {activeTag && tagFiles.length > 0 && (
-            <Text style={[s.tagFilesHint, { color: theme.textSecondary }]}>Файлы с #{activeTag} — во вкладке Файлы</Text>
+          {scope === 'tags' && searchTag && (
+            <View style={{ flex: 1 }}>
+              <Pressable onPress={() => setSearchTag(null)} style={s.backRow}>
+                <Ionicons name="chevron-back" size={18} color={theme.accent} />
+                <Text style={[s.backRowText, { color: theme.accent }]}>#{searchTag}</Text>
+              </Pressable>
+              <FlatList
+                data={tagFiles}
+                keyExtractor={(f) => f.uri}
+                contentContainerStyle={s.list}
+                renderItem={({ item: f }) => (
+                  <Pressable onPress={() => { setShowSearch(false); openStoredFile(f.uri, f.name); }} style={[s.item, { borderBottomColor: theme.divider }]}>
+                    <FileTypeIcon name={f.name} theme={theme} />
+                    <View style={s.info}>
+                      <Text style={[s.name, { color: theme.text }]} numberOfLines={1}>{f.name}</Text>
+                    </View>
+                  </Pressable>
+                )}
+              />
+            </View>
+          )}
+          {scope !== 'tags' && q.length > 0 && (
+            <FlatList
+              data={scope === 'fav'
+                ? entries.filter((e) => !e.isDir && favs.includes(e.uri) && e.name.toLowerCase().includes(q))
+                : searchFiles}
+              keyExtractor={(item) => item.uri}
+              contentContainerStyle={s.list}
+              renderItem={({ item }) => (
+                <Pressable
+                  onPress={() => {
+                    setShowSearch(false);
+                    if (item.isDir) { setCurrentPath(item.uri + '/'); setTab('files'); }
+                    else openEntry(item);
+                  }}
+                  style={[s.item, { borderBottomColor: theme.divider }]}
+                >
+                  {item.isDir ? (
+                    <View style={[s.iconWrap, { backgroundColor: theme.accentSoft }]}>
+                      <Ionicons name="folder" size={22} color={theme.accent} />
+                    </View>
+                  ) : (
+                    <FileTypeIcon name={item.name} theme={theme} />
+                  )}
+                  <View style={s.info}>
+                    <Text style={[s.name, { color: theme.text }]} numberOfLines={1}>{item.name}</Text>
+                    {!item.isDir && <TagChips tags={(tags[item.uri] || []).slice(0, 3)} theme={theme} />}
+                  </View>
+                </Pressable>
+              )}
+            />
+          )}
+          {scope !== 'tags' && q.length === 0 && (
+            <View style={{ flex: 1 }}>
+              <Text style={[s.recentHint, { color: theme.textSecondary }]}>Недавние</Text>
+              <FlatList
+                data={recent.slice(0, 10)}
+                keyExtractor={(item) => item.uri}
+                contentContainerStyle={s.list}
+                renderItem={({ item }) => (
+                  <Pressable onPress={() => { setShowSearch(false); openStoredFile(item.uri, item.title); }} style={[s.item, { borderBottomColor: theme.divider }]}>
+                    <FileTypeIcon name={item.title} theme={theme} />
+                    <View style={s.info}>
+                      <Text style={[s.name, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
+                    </View>
+                  </Pressable>
+                )}
+              />
+            </View>
           )}
         </View>
-      )}
-
-      {/* Bottom tabs */}
-      <View style={[s.tabs, { backgroundColor: theme.surface, borderTopColor: theme.border, paddingBottom: insets.bottom + 8 }]}>
-        {TABS.map((t) => {
-          const active = tab === t.key;
-          return (
-            <Pressable key={t.key} onPress={() => setTab(t.key)} style={s.tabBtn}>
-              <Ionicons name={t.icon as any} size={22} color={active ? theme.accent : theme.textSecondary} />
-              <Text style={[s.tabLabel, { color: active ? theme.accent : theme.textSecondary }]}>{t.label}</Text>
-            </Pressable>
-          );
-        })}
-        <Pressable onPress={() => navigation.navigate('Settings')} style={s.tabBtn}>
-          <Ionicons name="settings-outline" size={22} color={theme.textSecondary} />
-          <Text style={[s.tabLabel, { color: theme.textSecondary }]}>Настройки</Text>
-        </Pressable>
-      </View>
+      </Modal>
 
       {/* New Folder Modal */}
       <Modal visible={showNewFolder} transparent animationType="fade">
@@ -764,36 +904,66 @@ export default function FileBrowserScreen({ navigation }: Props) {
         </View>
       </Modal>
 
-      {/* Move Modal */}
-      <Modal visible={showMove} transparent animationType="fade">
+      {/* Move Modal: дерево целиком + крошки */}
+      <Modal visible={showMove} transparent animationType="fade" onRequestClose={() => setShowMove(false)}>
         <View style={s.modalOverlay}>
-          <View style={[s.modal, { backgroundColor: theme.surface, maxWidth: 360 }]}>
+          <View style={[s.moveModal, { backgroundColor: theme.surface }]}>
             <Text style={[s.modalTitle, { color: theme.text }]}>Переместить ({selected.size})</Text>
-            {moveTargets.length === 0 ? (
-              <Text style={[s.meta, { color: theme.textSecondary, marginBottom: 16 }]}>
-                Некуда перемещать — создайте папку
-              </Text>
-            ) : (
-              <FlatList
-                data={moveTargets}
-                keyExtractor={(t) => t.path}
-                style={{ maxHeight: 260, marginBottom: 12 }}
-                renderItem={({ item: t }) => {
-                  const active = moveDest === t.path;
+            <View style={s.moveCrumbs}>
+              <Pressable onPress={() => navMovePath(MD_READER_DIR)}>
+                <Text style={[s.crumbText, { color: moveParts.length === 0 ? theme.text : theme.accent }]}>Корень</Text>
+              </Pressable>
+              {moveParts.map((part, i) => (
+                <React.Fragment key={i}>
+                  <Text style={[s.crumbText, { color: theme.textSecondary }]}> / </Text>
+                  <Pressable onPress={() => navMovePath(MD_READER_DIR + moveParts.slice(0, i + 1).join('/') + '/')}>
+                    <Text style={[s.crumbText, { color: i === moveParts.length - 1 ? theme.text : theme.accent }]}>{part}</Text>
+                  </Pressable>
+                </React.Fragment>
+              ))}
+            </View>
+            <FlatList
+              data={moveTree ? flatTree.filter(({ node }) => {
+                const p = node.uri;
+                return ![...selected].some((u) => p === u || p === u + '/' || p.startsWith(u.endsWith('/') ? u : u + '/'));
+              }) : moveSubs.filter((e) => ![...selected].includes(e.uri))}
+              keyExtractor={(item: any) => moveTree ? item.node.uri : item.uri}
+              style={{ maxHeight: 300, marginBottom: 8 }}
+              renderItem={({ item }: any) => {
+                if (moveTree) {
+                  const { node, depth } = item as { node: FolderNode; depth: number };
+                  const active = moveDest === node.uri;
                   return (
-                    <Pressable
-                      onPress={() => setMoveDest(t.path)}
-                      style={[s.moveRow, { backgroundColor: active ? theme.accentSoft : 'transparent' }]}
-                    >
-                      <Ionicons name={t.label.startsWith('↑') ? 'arrow-up-outline' : 'folder-outline'} size={18} color={active ? theme.accent : theme.textSecondary} />
-                      <Text style={[s.moveLabel, { color: active ? theme.accent : theme.text }]} numberOfLines={1}>
-                        {t.label}
-                      </Text>
+                    <Pressable onPress={() => setMoveDest(node.uri)} style={[s.moveRow, { paddingLeft: 10 + depth * 16, backgroundColor: active ? theme.accentSoft : 'transparent' }]}>
+                      <Ionicons name="folder-outline" size={18} color={active ? theme.accent : theme.textSecondary} />
+                      <Text style={[s.moveLabel, { color: active ? theme.accent : theme.text }]} numberOfLines={1}>{node.name}</Text>
                       {active && <Ionicons name="checkmark" size={18} color={theme.accent} />}
                     </Pressable>
                   );
-                }}
-              />
+                }
+                const e = item as FileEntry;
+                const target = e.uri + '/';
+                const active = moveDest === target;
+                return (
+                  <Pressable onPress={() => navMovePath(target)} style={[s.moveRow, { backgroundColor: 'transparent' }]}>
+                    <Ionicons name="folder-outline" size={18} color={theme.textSecondary} />
+                    <Text style={[s.moveLabel, { color: theme.text }]} numberOfLines={1}>{e.name}</Text>
+                    <Pressable onPress={() => setMoveDest(target)} hitSlop={8} style={{ padding: 6 }}>
+                      <Ionicons name={active ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={active ? theme.accent : theme.textSecondary} />
+                    </Pressable>
+                  </Pressable>
+                );
+              }}
+            />
+            <Pressable
+              onPress={() => setMoveDest(movePath)}
+              style={[s.hereRow, moveDest === movePath && { backgroundColor: theme.accentSoft }]}
+            >
+              <Ionicons name="enter-outline" size={18} color={theme.accent} />
+              <Text style={[s.moveLabel, { color: theme.accent }]}>В текущую папку</Text>
+            </Pressable>
+            {selInsideMove && (
+              <Text style={[s.warn, { color: '#EF4444' }]}>Нельзя переместить папку в саму себя</Text>
             )}
             <View style={s.modalActions}>
               <Pressable onPress={() => { setShowMove(false); setMoveDest(''); if (moveSingle) { setMoveSingle(false); cancelSelecting(); } }} style={s.modalBtn}>
@@ -801,8 +971,8 @@ export default function FileBrowserScreen({ navigation }: Props) {
               </Pressable>
               <Pressable
                 onPress={moveSelected}
-                disabled={!moveDest}
-                style={[s.modalBtn, { backgroundColor: moveDest ? theme.accent : theme.border }]}
+                disabled={!moveDest || selInsideMove}
+                style={[s.modalBtn, { backgroundColor: moveDest && !selInsideMove ? theme.accent : theme.border }]}
               >
                 <Text style={[s.modalBtnText, { color: '#FFF' }]}>Сюда</Text>
               </Pressable>
@@ -810,15 +980,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
           </View>
         </View>
       </Modal>
-
-      {/* ⋮-меню файла/папки */}
-      <OverflowMenu
-        visible={!!menuFor}
-        title={menuFor?.name}
-        actions={menuFor ? fileMenuActions(menuFor) : []}
-        theme={theme}
-        onClose={() => setMenuFor(null)}
-      />
     </View>
   );
 }
@@ -845,11 +1006,10 @@ function styles(theme: any, insets: any) {
       backgroundColor: theme.surface, borderBottomWidth: 1, borderBottomColor: theme.border,
     },
     backBtn: { padding: 8, marginRight: 4 },
+    backSpacer: { width: 40 },
     title: { flex: 1, fontSize: 18, fontWeight: '600' },
     headerActions: { flexDirection: 'row', gap: 4 },
     iconBtn: { padding: 8 },
-    searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1 },
-    searchInput: { flex: 1, fontSize: 15, paddingVertical: 4 },
     sortRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1 },
     sortChip: { borderWidth: 1, borderColor: 'transparent', borderRadius: 99, paddingHorizontal: 12, paddingVertical: 5 },
     sortText: { fontSize: 13 },
@@ -859,37 +1019,47 @@ function styles(theme: any, insets: any) {
       borderBottomWidth: 1, borderBottomColor: theme.border,
     },
     crumbText: { fontSize: 13 },
-    tagFilter: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', margin: 12, marginBottom: 0, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 99 },
-    tagFilterText: { fontSize: 13, fontWeight: '600' },
-    list: { padding: 16, paddingBottom: 100 },
+    list: { padding: 16, paddingBottom: 160 },
     item: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
     checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: theme.border, alignItems: 'center', justifyContent: 'center' },
     iconWrap: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
     info: { flex: 1 },
     name: { fontSize: 15, fontWeight: '500' },
     meta: { fontSize: 12, marginTop: 2 },
-    itemActions: { flexDirection: 'row', gap: 0 },
     itemBtn: { padding: 8 },
-    tagRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth },
-    tagName: { flex: 1, fontSize: 15, fontWeight: '500' },
-    tagFilesHint: { fontSize: 12, textAlign: 'center', paddingVertical: 8 },
     tabs: { flexDirection: 'row', borderTopWidth: 1, paddingTop: 8, paddingHorizontal: 4, position: 'absolute', bottom: 0, left: 0, right: 0 },
     tabBtn: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: 4 },
     tabLabel: { fontSize: 10 },
+    fab: { position: 'absolute', right: 20, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8 },
     empty: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
     emptyText: { fontSize: 16 },
     emptyHint: { fontSize: 13, textAlign: 'center', paddingHorizontal: 40 },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
     modal: { borderRadius: 20, padding: 24, width: '80%', maxWidth: 320 },
-    modalTitle: { fontSize: 17, fontWeight: '600', marginBottom: 16 },
+    moveModal: { borderRadius: 20, padding: 20, width: '88%', maxWidth: 380, maxHeight: '80%' },
+    modalTitle: { fontSize: 17, fontWeight: '600', marginBottom: 12 },
     modalInput: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, marginBottom: 16 },
-    modalActions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
+    modalActions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end', marginTop: 8 },
     modalBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
     modalBtnText: { fontSize: 15, fontWeight: '500' },
     existingTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
     tagPill: { borderWidth: 1, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
     tagPillText: { fontSize: 12 },
-    moveRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 10, borderRadius: 10 },
+    moveRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 10, borderRadius: 10 },
     moveLabel: { flex: 1, fontSize: 15 },
+    moveCrumbs: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginBottom: 8, backgroundColor: theme.surfaceAlt, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
+    hereRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 10, borderRadius: 10, marginBottom: 4 },
+    warn: { fontSize: 12, textAlign: 'center', marginBottom: 4 },
+    searchWrap: { flex: 1 },
+    searchBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingBottom: 8 },
+    searchInputBig: { flex: 1, fontSize: 16, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginRight: 8 },
+    scopeRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
+    scopeChip: { borderWidth: 1, borderColor: 'transparent', borderRadius: 99, paddingHorizontal: 14, paddingVertical: 7 },
+    scopeText: { fontSize: 13, fontWeight: '500' },
+    tagRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth },
+    tagName: { flex: 1, fontSize: 15, fontWeight: '500' },
+    backRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 16, paddingVertical: 8 },
+    backRowText: { fontSize: 15, fontWeight: '600' },
+    recentHint: { fontSize: 13, fontWeight: '600', paddingHorizontal: 16, paddingTop: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   });
 }

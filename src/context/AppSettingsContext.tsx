@@ -120,3 +120,18 @@ export function useAppSettings(): Ctx {
 export function useAppSettingsOpt(): Ctx | null {
   return useContext(AppSettingsContext);
 }
+
+// Единый стиль чтения: хук — один источник для Reader и превью Settings.
+// Ключ ремаунта: при смене типографики Markdown перемонтируется,
+// иначе мемоизация react-native-markdown-display глотает обновления.
+export function useReadingStyle() {
+  const app = useAppSettingsOpt();
+  const fontSize = app?.fontSize ?? defaultSizes.fontSize;
+  const lineHeight = app?.lineHeight ?? defaultSizes.lineHeight;
+  const font = app?.font ?? DEFAULTS.font;
+  const fontFamily = font.replace(/\s+/g, '');
+  const contentWidth = app?.contentWidth ?? defaultSizes.contentWidth;
+  const readingTheme = app?.readingTheme ?? DEFAULTS.readingTheme;
+  const remountKey = `${fontFamily}|${fontSize}|${lineHeight}|${readingTheme}`;
+  return { fontSize, lineHeight, font, fontFamily, contentWidth, readingTheme, remountKey, app };
+}

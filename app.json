@@ -4,6 +4,12 @@
     "expo-font"
   ],
   "icon": "./assets/icon.png",
+  "backgroundColor": "#0D1117",
+  "splash": {
+    "image": "./assets/splash.png",
+    "resizeMode": "cover",
+    "backgroundColor": "#0D1117"
+  },
   "android": {
     "adaptiveIcon": {
       "foregroundImage": "./assets/adaptive-icon.png",
