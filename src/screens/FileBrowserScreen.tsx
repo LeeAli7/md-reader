@@ -9,6 +9,7 @@ import { getFavorites, toggleFavorite, getRecent, pushRecent as storePushRecent,
 import { getFolderTree as engineGetFolderTree } from '../utils/folderTree';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '../hooks/useTheme';
 import { FileTypeIcon } from '../components/FileTypeIcon';
 import { TagChips } from '../components/TagChips';
@@ -170,6 +171,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const toggleFav = async (uri: string) => {
     try {
       setFavs(await toggleFavorite(uri));
+      Haptics.selectionAsync().catch(() => {});
     } catch {}
   };
 
@@ -280,6 +282,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
             cancelSelecting();
             loadDir(currentPath);
             loadMeta();
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
           },
         },
       ],
@@ -329,6 +332,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
             await purgeMeta(entry.uri);
             loadDir(currentPath);
             loadMeta();
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
           },
         },
       ],
@@ -434,6 +438,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
     cancelSelecting();
     loadDir(currentPath);
     loadMeta();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   };
 
   // ⋮-меню файла/папки — попап у кнопки.
@@ -456,6 +461,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
   };
 
   const openPop = (entry: FileEntry, e: NativeSyntheticEvent<NativeTouchEvent>) => {
+    Haptics.selectionAsync().catch(() => {});
     const { pageX, pageY } = e.nativeEvent;
     const { width: SW } = Dimensions.get('window');
     setPop({

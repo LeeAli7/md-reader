@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
-  View, Text, Pressable, StyleSheet,
+  View, Text, Pressable, StyleSheet, Animated,
   Modal, FlatList, NativeSyntheticEvent, NativeScrollEvent, Dimensions,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
 import * as FileSystem from 'expo-file-system';
-import { getRecent, pushRecent, type RecentEntry } from '../utils/metaStore';
-import { getPosition, setPosition } from '../utils/metaStore';
+import { getRecent, pushRecent, getPosition, setPosition, type RecentEntry } from '../utils/metaStore';
 import { useTheme } from '../hooks/useTheme';
 import { readingThemes } from '../theme/tokens';
 import { fonts } from '../theme/fonts';
@@ -110,12 +110,12 @@ const ChunkView = React.memo(function ChunkView({ text, mdStyle, rules }: { text
 });
 
 const MAX_DOCS = 6;
-const POS_KEY = 'r3pos_timer';
 
-// Плавающий пузырь документа: тап — переключить, удержание — режим закрытия,
-// перетаскивание на крестик — закрыть.
+// Плавающий пузырь документа на пружинах: появление scale-spring, drag за пальцем,
+// над крестиком — магнит (scale 1.3 + красная рамка). Тап — переключить,
+// удержание 550мс — режим закрытия, дроп на крестик — закрыть.
 function DocBubble({
-  doc, initial, color, onTap, onMove, onHold, onDrop, closing,
+  doc, initial, color, onTap, onMove, onHold, onDrop, onDragLive, closing,
 }: {
   doc: Doc;
   initial: { x: number; y: number };
@@ -124,20 +124,41 @@ function DocBubble({
   onMove: (uri: string, pos: { x: number; y: number }) => void;
   onHold: (uri: string) => void;
   onDrop: (uri: string) => void;
+  onDragLive: (uri: string, cx: number, cy: number) => void;
   closing: boolean;
 }) {
-  const [pos, setPos] = useState(initial);
-  const st = useRef({ sx: 0, sy: 0, moved: false, timer: null as any });
-  const posRef = useRef(pos);
-  posRef.current = pos;
+  const base = useRef({ ...initial });
+  const [at, setAt] = useState({ ...initial });
+  const pan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const scale = useRef(new Animated.Value(0)).current;
+  const st = useRef({ sx: 0, sy: 0, moved: false, timer: null as any, over: false });
+
+  useEffect(() => {
+    Animated.spring(scale, { toValue: 1, friction: 6, tension: 120, useNativeDriver: true }).start();
+  }, [scale]);
 
   const clearTimer = () => {
     if (st.current.timer) { clearTimeout(st.current.timer); st.current.timer = null; }
   };
 
+  const setOver = (over: boolean) => {
+    if (st.current.over === over) return;
+    st.current.over = over;
+    Animated.spring(scale, { toValue: over ? 1.3 : 1, friction: 5, tension: 140, useNativeDriver: true }).start();
+  };
+
   return (
-    <View
-      style={[bubbleStyles.bub, { left: pos.x, top: pos.y, backgroundColor: color, borderColor: closing ? '#EF4444' : 'transparent' }]}
+    <Animated.View
+      style={[
+        bubbleStyles.bub,
+        {
+          left: at.x,
+          top: at.y,
+          backgroundColor: color,
+          borderColor: closing ? '#EF4444' : 'transparent',
+          transform: [...(pan as any).getTranslateTransform(), { scale }],
+        },
+      ]}
       onStartShouldSetResponder={() => true}
       onResponderGrant={(e) => {
         st.current.sx = e.nativeEvent.pageX;
@@ -147,30 +168,55 @@ function DocBubble({
         st.current.timer = setTimeout(() => onHold(doc.uri), 550);
       }}
       onResponderMove={(e) => {
+        const { width: SW, height: SH } = Dimensions.get('window');
         const dx = e.nativeEvent.pageX - st.current.sx;
         const dy = e.nativeEvent.pageY - st.current.sy;
         if (Math.abs(dx) + Math.abs(dy) > 14) st.current.moved = true;
-        const { width: SW, height: SH } = Dimensions.get('window');
-        setPos({
-          x: Math.max(4, Math.min(initial.x + dx, SW - 52)),
-          y: Math.max(60, Math.min(initial.y + dy, SH - 120)),
-        });
+        const nx = Math.max(-base.current.x + 4, Math.min(dx, SW - 52 - base.current.x));
+        const ny = Math.max(-base.current.y + 60, Math.min(dy, SH - 120 - base.current.y));
+        pan.setValue({ x: nx, y: ny });
+        const cx = base.current.x + nx + 24;
+        const cy = base.current.y + ny + 24;
+        onDragLive(doc.uri, cx, cy);
+        if (closing) {
+          const zx = SW / 2, zy = SH - 110;
+          setOver(Math.hypot(cx - zx, cy - zy) < 70);
+        }
       }}
       onResponderRelease={() => {
         clearTimer();
+        pan.stopAnimation((v: any) => {
+          base.current = { x: base.current.x + (v.x || 0), y: base.current.y + (v.y || 0) };
+          pan.setValue({ x: 0, y: 0 });
+          setAt({ ...base.current });
+          onMove(doc.uri, { ...base.current });
+        });
         if (closing) {
+          setOver(false);
           onDrop(doc.uri);
         } else if (!st.current.moved) {
           onTap(doc.uri);
         }
-        onMove(doc.uri, posRef.current);
       }}
       onResponderTerminate={clearTimer}
     >
       <Text style={bubbleStyles.letter} numberOfLines={1}>
         {(doc.title.trim()[0] || '?').toUpperCase()}
       </Text>
-    </View>
+    </Animated.View>
+  );
+}
+
+// Крестик с пружинным появлением, зона минимум 88pt.
+function CloseX() {
+  const s = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(s, { toValue: 1, friction: 5, tension: 100, useNativeDriver: true }).start();
+  }, [s]);
+  return (
+    <Animated.View style={{ transform: [{ scale: s }] }}>
+      <Ionicons name="close-circle" size={64} color="#EF4444" />
+    </Animated.View>
   );
 }
 
@@ -202,6 +248,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const [progress, setProgress] = useState(0);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
   const [closingUri, setClosingUri] = useState<string | null>(null);
+  const dragLive = useRef<Record<string, { x: number; y: number }>>({});
   const [bubPos, setBubPos] = useState<Record<string, { x: number; y: number }>>({});
   const touchY = useRef(0);
 
@@ -211,16 +258,18 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const main = useDoc(active.uri);
   const split = useDoc(splitDoc?.uri ?? '');
 
-  // Позиции чтения: карта uri→доля, грузится один раз, пишется троттлом.
+  // Позиции чтения: доля 0..1 на uri. Пишем троттлом, читаем когда известны
+  // ОБЕ высоты (контент + вьюпорт) и контент загружен — иначе рестор мимо.
   const posMap = useRef<Record<string, number>>({});
-  const posLoaded = useRef(false);
   const restored = useRef<Set<string>>(new Set());
   const lastFrac = useRef<Record<string, number>>({});
   const saveTimer = useRef<any>(null);
   const listRefs = useRef<Record<string, FlatList | null>>({});
+  const contentH = useRef<Record<string, number>>({});
+  const viewportH = useRef<Record<string, number>>({});
+  const chunksReady = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
-    posLoaded.current = true;
     return () => {
       // Unmount любым способом — дописываем последнее известное.
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -246,18 +295,29 @@ export default function ReaderScreen({ route, navigation }: Props) {
     return f;
   }, [flushLater]);
 
-  const restoreFor = useCallback((uri: string, height: number) => {
-    if (!uri || restored.current.has(uri) || !posLoaded.current) return;
+  const tryRestore = useCallback((uri: string) => {
+    if (!uri || restored.current.has(uri)) return;
+    const ch = contentH.current[uri] ?? 0;
+    const vh = viewportH.current[uri] ?? 0;
+    if (!chunksReady.current[uri]) return;
+    if (vh <= 0 || ch <= vh + 4) {
+      // Крутить нечего (всё влезает) — помечаем готовым, позиция 0.
+      restored.current.add(uri);
+      posMap.current[uri] = 0;
+      lastFrac.current[uri] = 0;
+      return;
+    }
     restored.current.add(uri);
     (async () => {
       try {
         const f = await getPosition(uri);
         posMap.current[uri] = f;
         lastFrac.current[uri] = f;
-        if (f > 0.005 && height > 0) {
+        if (f > 0.005) {
+          const y = f * (ch - vh);
           setTimeout(() => {
-            try { listRefs.current[uri]?.scrollToOffset({ offset: f * height, animated: false }); } catch {}
-          }, 150);
+            try { listRefs.current[uri]?.scrollToOffset({ offset: y, animated: false }); } catch {}
+          }, 120);
         }
       } catch {}
     })();
@@ -283,17 +343,32 @@ export default function ReaderScreen({ route, navigation }: Props) {
 
   useEffect(() => { loadRecent(); }, [loadRecent]);
 
+  const openSplitDoc = (uri: string, title: string) => {
+    const ix = docs.findIndex((d) => d.uri === uri);
+    if (ix < 0) {
+      const next = [...docs, { uri, title }].slice(-MAX_DOCS);
+      const ni = next.findIndex((d) => d.uri === uri);
+      restored.current.delete(uri);
+      setDocs(next);
+      setSplitIdx(ni);
+    } else {
+      setSplitIdx(ix);
+    }
+    Haptics.selectionAsync().catch(() => {});
+    setShowRecent(false);
+  };
+
   const openDoc = async (uri: string, title: string) => {
-    setDocs((prev) => {
-      const i = prev.findIndex((d) => d.uri === uri);
-      if (i >= 0) {
-        setActiveIdx(i);
-        return prev;
-      }
-      const next = [...prev, { uri, title }].slice(-MAX_DOCS);
-      setActiveIdx(next.findIndex((d) => d.uri === uri));
-      return next;
-    });
+    const i = docs.findIndex((d) => d.uri === uri);
+    if (i >= 0) {
+      activateIdx(i);
+    } else {
+      const next = [...docs, { uri, title }].slice(-MAX_DOCS);
+      const ni = next.findIndex((d) => d.uri === uri);
+      restored.current.delete(uri);
+      setDocs(next);
+      setActiveIdx(ni);
+    }
     setShowRecent(false);
     try { setRecent(await pushRecent(uri, title)); } catch {}
   };
@@ -386,7 +461,26 @@ export default function ReaderScreen({ route, navigation }: Props) {
     if (isMain) setProgress(frac);
   };
 
-  const makeContentSize = (uri: string) => (_w: number, h: number) => restoreFor(uri, h);
+  const makeContentSize = (uri: string) => (_w: number, h: number) => {
+    contentH.current[uri] = h;
+    chunksReady.current[uri] = true;
+    tryRestore(uri);
+  };
+
+  const makeLayout = (uri: string) => (e: any) => {
+    viewportH.current[uri] = e.nativeEvent.layout.height;
+    tryRestore(uri);
+  };
+
+  // Активация дока: сбрасываем флаг ресторa, чтобы список встал на saved-позицию.
+  const activateIdx = useCallback((i: number) => {
+    setDocs((prev) => {
+      const d = prev[i];
+      if (d) restored.current.delete(d.uri);
+      return prev;
+    });
+    setActiveIdx(i);
+  }, []);
 
   const jumpToHeading = (h: Heading) => {
     setShowTOC(false);
@@ -455,6 +549,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
       )}
       <View
         style={{ flex: 1 }}
+        onLayout={makeLayout(doc.uri)}
         onTouchStart={(e) => { touchY.current = e.nativeEvent.pageY; }}
         onTouchEnd={(e) => {
           // Тап без скролла — вкл/выкл иммерсив. Свайпы не трогаем.
@@ -482,7 +577,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
   );
 
   const bubbleDocs = docs.filter((d) => d.uri !== active.uri);
-  const closeZone = { x: SW / 2 - 40, y: SH - 150, w: 80, h: 80 };
+  const closeZone = { x: SW / 2 - 44, y: SH - 158, w: 88, h: 88 };
 
   return (
     <View style={[s.container, { backgroundColor: rt.bg }]}>
@@ -537,14 +632,21 @@ export default function ReaderScreen({ route, navigation }: Props) {
           closing={closingUri === d.uri}
           onTap={(uri) => {
             const idx = docs.findIndex((x) => x.uri === uri);
-            if (idx >= 0) setActiveIdx(idx);
+            if (idx >= 0) {
+              Haptics.selectionAsync().catch(() => {});
+              activateIdx(idx);
+            }
           }}
           onMove={(uri, pos) => setBubPos((p) => ({ ...p, [uri]: pos }))}
-          onHold={(uri) => setClosingUri(uri)}
+          onDragLive={(uri, cx, cy) => { dragLive.current[uri] = { x: cx, y: cy }; }}
+          onHold={(uri) => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            setClosingUri(uri);
+          }}
           onDrop={(uri) => {
-            const bx = (bubPos[uri] ?? { x: 0, y: 0 }).x + 24;
-            const by = (bubPos[uri] ?? { x: 0, y: 0 }).y + 24;
-            if (bx >= closeZone.x && bx <= closeZone.x + closeZone.w && by >= closeZone.y && by <= closeZone.y + closeZone.h) {
+            const p = dragLive.current[uri] ?? { x: -999, y: -999 };
+            if (p.x >= closeZone.x && p.x <= closeZone.x + closeZone.w && p.y >= closeZone.y && p.y <= closeZone.y + closeZone.h) {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
               closeDoc(uri);
             } else {
               setClosingUri(null);
@@ -554,7 +656,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
       ))}
       {closingUri && (
         <View style={[s.closeZone, { left: closeZone.x, top: closeZone.y, width: closeZone.w, height: closeZone.h }]}>
-          <Ionicons name="close-circle" size={56} color="#EF4444" />
+          <CloseX />
         </View>
       )}
 
@@ -602,20 +704,11 @@ export default function ReaderScreen({ route, navigation }: Props) {
                     </Pressable>
                     {splitIdx === null && item.uri !== active.uri && (
                       <Pressable
-                        onPress={() => {
-                          let idx = docs.findIndex((d) => d.uri === item.uri);
-                          if (idx < 0) {
-                            const next = [...docs, { uri: item.uri, title: item.title }].slice(-MAX_DOCS);
-                            setDocs(next);
-                            idx = next.findIndex((d) => d.uri === item.uri);
-                          }
-                          setSplitIdx(idx);
-                          setShowRecent(false);
-                        }}
+                        onPress={() => openSplitDoc(item.uri, item.title)}
                         hitSlop={8}
                         style={s.iconBtn}
                       >
-                        <Ionicons name="copy-outline" size={20} color={theme.accent} />
+                        <Ionicons name="columns-outline" size={20} color={theme.accent} />
                       </Pressable>
                     )}
                   </View>
