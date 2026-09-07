@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
 import * as FileSystem from 'expo-file-system';
 import { getRecent, pushRecent, getPosition, setPosition, type RecentEntry } from '../utils/metaStore';
+import { loadReadable } from '../utils/documentLoader';
 import { useTheme } from '../hooks/useTheme';
 import { readingThemes } from '../theme/tokens';
 import { fonts } from '../theme/fonts';
@@ -79,6 +80,18 @@ function splitMarkdown(md: string): Chunk[] {
   return chunks.length > 0 ? chunks : [{ text: md, start: 0 }];
 }
 
+function sheetsToMarkdown(sheets: { name: string; rows: string[][] }[]): string {
+  return sheets.map((sh) => {
+    const head = `## ${sh.name}`;
+    if (sh.rows.length === 0) return `${head}\n\n_Пустой лист_`;
+    const cols = Math.max(...sh.rows.map((r) => r.length));
+    const esc = (c: string) => (c ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
+    const row = (r: string[]) => `| ${Array.from({ length: cols }, (_, i) => esc(r[i] ?? '')).join(' | ')} |`;
+    const sep = `| ${Array.from({ length: cols }, () => '---').join(' | ')} |`;
+    return `${head}\n\n${row(sh.rows[0])}\n${sep}\n${sh.rows.slice(1).map(row).join('\n')}`;
+  }).join('\n\n');
+}
+
 function useDoc(uri: string) {
   const [content, setContent] = useState('');
   const [tick, setTick] = useState(0);
@@ -87,8 +100,12 @@ function useDoc(uri: string) {
     let alive = true;
     (async () => {
       try {
-        const text = await FileSystem.readAsStringAsync(uri);
-        if (alive) setContent(text);
+        const ext = uri.split('.').pop()?.toLowerCase() ?? '';
+        const loaded = await loadReadable(uri, ext);
+        if (!alive) return;
+        if (loaded.kind === 'text') setContent(loaded.text ?? '');
+        else if (loaded.kind === 'sheet') setContent(sheetsToMarkdown(loaded.sheets ?? []));
+        else setContent(`# Не предпросмотр\n\n${loaded.note ?? 'Этот формат открывается через «Поделиться».'}`);
       } catch {
         if (alive) setContent('# Ошибка чтения файла\n\nНе удалось открыть файл.');
       }
