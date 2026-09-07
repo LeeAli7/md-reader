@@ -7,6 +7,7 @@ const KEYS = {
   favorites: 'md2_favorites', // string[] of file uris
   recent: 'md2_recent', // {uri,title,ts}[] capped
   tags: 'md2_tags', // Record<uri, string[]>
+  positions: 'md2_positions', // Record<uri, {offset:number,ts:number}>
 };
 
 const MAX_RECENT = 50;
@@ -129,10 +130,11 @@ export async function searchByTag(tag: string): Promise<string[]> {
  * never surface in Favorites / Recent / Tags tabs.
  */
 export async function removeFile(uri: string): Promise<void> {
-  const [favs, recent, map] = await Promise.all([
+  const [favs, recent, map, pos] = await Promise.all([
     getFavorites(),
     getRecent(),
     getTagMap(),
+    getPositionMap(),
   ]);
   let touched = false;
   if (favs.includes(uri)) {
@@ -148,6 +150,11 @@ export async function removeFile(uri: string): Promise<void> {
     await writeJSON(KEYS.tags, map);
     touched = true;
   }
+  if (pos[uri] !== undefined) {
+    delete pos[uri];
+    await writeJSON(KEYS.positions, pos);
+    touched = true;
+  }
   void touched;
 }
 
@@ -157,12 +164,13 @@ export async function removeFile(uri: string): Promise<void> {
  * (this module stays FS-free). Returns removed uri count.
  */
 export async function pruneMissing(exists: (uri: string) => Promise<boolean>): Promise<number> {
-  const [favs, recent, map] = await Promise.all([
+  const [favs, recent, map, pos] = await Promise.all([
     getFavorites(),
     getRecent(),
     getTagMap(),
+    getPositionMap(),
   ]);
-  const uris = new Set<string>([...favs, ...recent.map(e => e.uri), ...Object.keys(map)]);
+  const uris = new Set<string>([...favs, ...recent.map(e => e.uri), ...Object.keys(map), ...Object.keys(pos)]);
   let removed = 0;
   for (const uri of uris) {
     let ok = true;
@@ -177,4 +185,32 @@ export async function pruneMissing(exists: (uri: string) => Promise<boolean>): P
     }
   }
   return removed;
+}
+
+// ---- Reading positions ----
+
+export interface PositionEntry {
+  offset: number;
+  ts: number;
+}
+
+export type PositionMap = Record<string, PositionEntry>;
+
+export async function getPositionMap(): Promise<PositionMap> {
+  const map = await readJSON<PositionMap>(KEYS.positions, {});
+  return map && typeof map === 'object' ? map : {};
+}
+
+/** Saved scroll offset for uri, 0 when never recorded. */
+export async function getPosition(uri: string): Promise<number> {
+  const entry = (await getPositionMap())[uri];
+  return typeof entry?.offset === 'number' && entry.offset >= 0 ? entry.offset : 0;
+}
+
+/** Persist scroll offset. UI throttles calls (~500ms) + writes on unmount/blur. */
+export async function setPosition(uri: string, offset: number): Promise<void> {
+  if (!uri || !(offset >= 0)) return;
+  const map = await getPositionMap();
+  map[uri] = { offset, ts: Date.now() };
+  await writeJSON(KEYS.positions, map);
 }
