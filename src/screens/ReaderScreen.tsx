@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
 import * as FileSystem from 'expo-file-system';
 import { getRecent, pushRecent, type RecentEntry } from '../utils/metaStore';
-import { getPosition, setPosition } from '../components/readingPos';
+import { getPosition, setPosition } from '../utils/metaStore';
 import { useTheme } from '../hooks/useTheme';
 import { readingThemes } from '../theme/tokens';
 import { fonts } from '../theme/fonts';
@@ -419,7 +419,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
   }
   menuActions.push({ icon: 'pencil-outline', label: 'Редактировать', onPress: openEditor });
   if (splitIdx === null) {
-    menuActions.push({ icon: 'columns-outline', label: 'Второй документ рядом', onPress: () => setShowRecent(true) });
+    menuActions.push({ icon: 'copy-outline', label: 'Второй документ рядом', onPress: () => setShowRecent(true) });
   } else {
     menuActions.push({ icon: 'close-outline', label: 'Закрыть второй документ', onPress: () => setSplitIdx(null) });
   }
@@ -615,7 +615,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
                         hitSlop={8}
                         style={s.iconBtn}
                       >
-                        <Ionicons name="columns-outline" size={20} color={theme.accent} />
+                        <Ionicons name="copy-outline" size={20} color={theme.accent} />
                       </Pressable>
                     )}
                   </View>
