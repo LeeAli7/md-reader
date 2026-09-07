@@ -115,6 +115,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const [moveSingle, setMoveSingle] = useState(false);
   const [movePath, setMovePath] = useState(MD_READER_DIR);
   const [moveTree, setMoveTree] = useState<FolderNode[] | null>(null);
+  const [moveView, setMoveView] = useState<'tree' | 'nav'>('tree');
   const [moveSubs, setMoveSubs] = useState<FileEntry[]>([]);
 
   const loadDir = useCallback(async (path: string) => {
@@ -364,7 +365,9 @@ export default function FileBrowserScreen({ navigation }: Props) {
     }
     setMoveDest('');
     setMovePath(MD_READER_DIR);
-    setMoveTree(await loadFolderTree());
+    const tree = await loadFolderTree();
+    setMoveTree(tree);
+    setMoveView(tree ? 'tree' : 'nav');
     await refreshMoveSubs(MD_READER_DIR);
     setShowMove(true);
   };
@@ -385,6 +388,17 @@ export default function FileBrowserScreen({ navigation }: Props) {
   };
 
   const navMovePath = (path: string) => {
+    setMovePath(path);
+    setMoveView('nav');
+    refreshMoveSubs(path);
+  };
+
+  const backToTree = () => {
+    setMoveView('tree');
+    navMovePathKeepView(MD_READER_DIR);
+  };
+
+  const navMovePathKeepView = (path: string) => {
     setMovePath(path);
     refreshMoveSubs(path);
   };
@@ -918,22 +932,29 @@ export default function FileBrowserScreen({ navigation }: Props) {
                 </React.Fragment>
               ))}
             </View>
+            {moveView === 'nav' && moveTree && (
+              <Pressable onPress={backToTree} style={s.backTreeRow}>
+                <Ionicons name="git-network-outline" size={18} color={theme.accent} />
+                <Text style={[s.moveLabel, { color: theme.accent }]}>Всё дерево</Text>
+              </Pressable>
+            )}
             <FlatList
-              data={moveTree ? flatTree.filter(({ node }) => {
+              data={moveView === 'tree' && moveTree ? flatTree.filter(({ node }) => {
                 const p = node.uri;
                 return ![...selected].some((u) => p === u || p === u + '/' || p.startsWith(u.endsWith('/') ? u : u + '/'));
               }) : moveSubs.filter((e) => ![...selected].includes(e.uri))}
-              keyExtractor={(item: any) => moveTree ? item.node.uri : item.uri}
+              keyExtractor={(item: any) => moveView === 'tree' && moveTree ? item.node.uri : item.uri}
               style={{ maxHeight: 300, marginBottom: 8 }}
               renderItem={({ item }: any) => {
-                if (moveTree) {
+                if (moveView === 'tree' && moveTree) {
                   const { node, depth } = item as { node: FolderNode; depth: number };
                   const active = moveDest === node.uri;
+                  // Тап — провалиться внутрь (2-3 папки за один заход), выбор — через «Сюда».
                   return (
-                    <Pressable onPress={() => setMoveDest(node.uri)} style={[s.moveRow, { paddingLeft: 10 + depth * 16, backgroundColor: active ? theme.accentSoft : 'transparent' }]}>
+                    <Pressable onPress={() => { navMovePath(node.uri); setMoveDest(node.uri); }} style={[s.moveRow, { paddingLeft: 10 + depth * 16, backgroundColor: active ? theme.accentSoft : 'transparent' }]}>
                       <Ionicons name="folder-outline" size={18} color={active ? theme.accent : theme.textSecondary} />
                       <Text style={[s.moveLabel, { color: active ? theme.accent : theme.text }]} numberOfLines={1}>{node.name}</Text>
-                      {active && <Ionicons name="checkmark" size={18} color={theme.accent} />}
+                      <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
                     </Pressable>
                   );
                 }
@@ -1043,6 +1064,7 @@ function styles(theme: any, insets: any) {
     tagPillText: { fontSize: 12 },
     moveRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 10, borderRadius: 10 },
     moveLabel: { flex: 1, fontSize: 15 },
+    backTreeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 10, marginBottom: 4 },
     moveCrumbs: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginBottom: 8, backgroundColor: theme.surfaceAlt, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
     hereRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 10, borderRadius: 10, marginBottom: 4 },
     warn: { fontSize: 12, textAlign: 'center', marginBottom: 4 },

@@ -1,31 +1,17 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
-declare const require: any;
-
-// Копирование опционально: expo-clipboard подтянется зависимостями,
-// без него кнопка тихо ничего не делает вместо падения.
-function getClipboard(): any | null {
-  try {
-    return require('expo-clipboard');
-  } catch {
-    return null;
-  }
-}
+import * as Clipboard from 'expo-clipboard';
 
 function CodeBlockInner({ code, rt }: { code: string; rt: { bg: string; text: string } }) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
-    const cb = getClipboard();
-    if (cb && cb.setStringAsync) {
-      try {
-        await cb.setStringAsync(code);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      } catch {}
-    }
+    try {
+      await Clipboard.setStringAsync(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
   };
 
   return (
