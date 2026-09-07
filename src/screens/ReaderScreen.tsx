@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
 import * as FileSystem from 'expo-file-system';
 import { getRecent, pushRecent, type RecentEntry } from '../utils/metaStore';
+import { getPosition, setPosition } from '../components/readingPos';
 import { useTheme } from '../hooks/useTheme';
 import { readingThemes } from '../theme/tokens';
 import { fonts } from '../theme/fonts';
@@ -21,6 +22,11 @@ import type { MenuAction } from '../components/OverflowMenu';
 interface Props {
   route: any;
   navigation: any;
+}
+
+interface Doc {
+  uri: string;
+  title: string;
 }
 
 function parseHeadings(md: string): Heading[] {
@@ -78,13 +84,16 @@ function useDoc(uri: string) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!uri) { setContent(''); return; }
+    let alive = true;
     (async () => {
       try {
-        setContent(await FileSystem.readAsStringAsync(uri));
+        const text = await FileSystem.readAsStringAsync(uri);
+        if (alive) setContent(text);
       } catch {
-        setContent('# Ошибка чтения файла\n\nНе удалось открыть файл.');
+        if (alive) setContent('# Ошибка чтения файла\n\nНе удалось открыть файл.');
       }
     })();
+    return () => { alive = false; };
   }, [uri, tick]);
   const reload = useCallback(() => setTick((t) => t + 1), []);
   const headings = useMemo(() => parseHeadings(content), [content]);
@@ -100,16 +109,90 @@ const ChunkView = React.memo(function ChunkView({ text, mdStyle, rules }: { text
   return <Markdown rules={rules} style={mdStyle}>{text}</Markdown>;
 });
 
+const MAX_DOCS = 6;
+const POS_KEY = 'r3pos_timer';
+
+// Плавающий пузырь документа: тап — переключить, удержание — режим закрытия,
+// перетаскивание на крестик — закрыть.
+function DocBubble({
+  doc, initial, color, onTap, onMove, onHold, onDrop, closing,
+}: {
+  doc: Doc;
+  initial: { x: number; y: number };
+  color: string;
+  onTap: (uri: string) => void;
+  onMove: (uri: string, pos: { x: number; y: number }) => void;
+  onHold: (uri: string) => void;
+  onDrop: (uri: string) => void;
+  closing: boolean;
+}) {
+  const [pos, setPos] = useState(initial);
+  const st = useRef({ sx: 0, sy: 0, moved: false, timer: null as any });
+  const posRef = useRef(pos);
+  posRef.current = pos;
+
+  const clearTimer = () => {
+    if (st.current.timer) { clearTimeout(st.current.timer); st.current.timer = null; }
+  };
+
+  return (
+    <View
+      style={[bubbleStyles.bub, { left: pos.x, top: pos.y, backgroundColor: color, borderColor: closing ? '#EF4444' : 'transparent' }]}
+      onStartShouldSetResponder={() => true}
+      onResponderGrant={(e) => {
+        st.current.sx = e.nativeEvent.pageX;
+        st.current.sy = e.nativeEvent.pageY;
+        st.current.moved = false;
+        clearTimer();
+        st.current.timer = setTimeout(() => onHold(doc.uri), 550);
+      }}
+      onResponderMove={(e) => {
+        const dx = e.nativeEvent.pageX - st.current.sx;
+        const dy = e.nativeEvent.pageY - st.current.sy;
+        if (Math.abs(dx) + Math.abs(dy) > 14) st.current.moved = true;
+        const { width: SW, height: SH } = Dimensions.get('window');
+        setPos({
+          x: Math.max(4, Math.min(initial.x + dx, SW - 52)),
+          y: Math.max(60, Math.min(initial.y + dy, SH - 120)),
+        });
+      }}
+      onResponderRelease={() => {
+        clearTimer();
+        if (closing) {
+          onDrop(doc.uri);
+        } else if (!st.current.moved) {
+          onTap(doc.uri);
+        }
+        onMove(doc.uri, posRef.current);
+      }}
+      onResponderTerminate={clearTimer}
+    >
+      <Text style={bubbleStyles.letter} numberOfLines={1}>
+        {(doc.title.trim()[0] || '?').toUpperCase()}
+      </Text>
+    </View>
+  );
+}
+
+const bubbleStyles = StyleSheet.create({
+  bub: {
+    position: 'absolute', width: 48, height: 48, borderRadius: 24,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 2,
+    shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6, elevation: 8,
+    zIndex: 50,
+  },
+  letter: { color: '#FFF', fontSize: 20, fontWeight: '700' },
+});
+
 export default function ReaderScreen({ route, navigation }: Props) {
-  const [mainUri, setMainUri] = useState<string>(route.params?.uri ?? '');
-  const [mainTitle, setMainTitle] = useState<string>(route.params?.title ?? '');
-  const [splitUri, setSplitUri] = useState<string | null>(null);
-  const [splitTitle, setSplitTitle] = useState('');
+  const initDoc: Doc = { uri: route.params?.uri ?? '', title: route.params?.title ?? '' };
+  const [docs, setDocs] = useState<Doc[]>([initDoc]);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [splitIdx, setSplitIdx] = useState<number | null>(null);
   const { theme } = useTheme();
   const rs = useReadingStyle();
   const { fontSize, lineHeight, fontFamily, contentWidth, readingTheme, remountKey, app } = rs;
   const insets = useSafeAreaInsets();
-  const listRef = useRef<FlatList>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showTOC, setShowTOC] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -118,10 +201,67 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const [showUI, setShowUI] = useState(true);
   const [progress, setProgress] = useState(0);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
+  const [closingUri, setClosingUri] = useState<string | null>(null);
+  const [bubPos, setBubPos] = useState<Record<string, { x: number; y: number }>>({});
   const touchY = useRef(0);
 
-  const main = useDoc(mainUri);
-  const split = useDoc(splitUri ?? '');
+  const active = docs[activeIdx] ?? initDoc;
+  const splitDoc = splitIdx !== null ? docs[splitIdx] : null;
+
+  const main = useDoc(active.uri);
+  const split = useDoc(splitDoc?.uri ?? '');
+
+  // Позиции чтения: карта uri→доля, грузится один раз, пишется троттлом.
+  const posMap = useRef<Record<string, number>>({});
+  const posLoaded = useRef(false);
+  const restored = useRef<Set<string>>(new Set());
+  const lastFrac = useRef<Record<string, number>>({});
+  const saveTimer = useRef<any>(null);
+  const listRefs = useRef<Record<string, FlatList | null>>({});
+
+  useEffect(() => {
+    posLoaded.current = true;
+    return () => {
+      // Unmount любым способом — дописываем последнее известное.
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      Object.entries(lastFrac.current).forEach(([u, f]) => { setPosition(u, f); });
+    };
+  }, []);
+
+  const flushLater = useCallback(() => {
+    if (saveTimer.current) return;
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      Object.entries(lastFrac.current).forEach(([u, f]) => { setPosition(u, f); });
+    }, 500);
+  }, []);
+
+  const trackScroll = useCallback((uri: string, frac: number) => {
+    const f = Math.max(0, Math.min(1, frac));
+    lastFrac.current[uri] = f;
+    if (Math.abs(f - (posMap.current[uri] ?? -1)) > 0.02) {
+      posMap.current[uri] = f;
+      flushLater();
+    }
+    return f;
+  }, [flushLater]);
+
+  const restoreFor = useCallback((uri: string, height: number) => {
+    if (!uri || restored.current.has(uri) || !posLoaded.current) return;
+    restored.current.add(uri);
+    (async () => {
+      try {
+        const f = await getPosition(uri);
+        posMap.current[uri] = f;
+        lastFrac.current[uri] = f;
+        if (f > 0.005 && height > 0) {
+          setTimeout(() => {
+            try { listRefs.current[uri]?.scrollToOffset({ offset: f * height, animated: false }); } catch {}
+          }, 150);
+        }
+      } catch {}
+    })();
+  }, []);
 
   const rt = readingThemes[readingTheme] || readingThemes.default;
   const isDarkReading = rt.text === '#C9D1D9' || rt.text === '#E7E5E4' || rt.text === '#F8F8F2' || rt.text === '#586E75';
@@ -130,33 +270,57 @@ export default function ReaderScreen({ route, navigation }: Props) {
     try { setRecent(await getRecent()); } catch {}
   }, []);
 
-  // Перечитываем файл при возврате из редактора — правки видны сразу.
+  // Перечитываем файлы при возврате из редактора — правки видны сразу.
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
       main.reload();
-      if (splitUri) split.reload();
+      if (splitDoc) split.reload();
       loadRecent();
     });
     return unsub;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation, mainUri, splitUri]);
+  }, [navigation, active.uri, splitDoc?.uri]);
 
   useEffect(() => { loadRecent(); }, [loadRecent]);
 
-  const openMain = async (uri: string, title: string) => {
-    setMainUri(uri);
-    setMainTitle(title);
+  const openDoc = async (uri: string, title: string) => {
+    setDocs((prev) => {
+      const i = prev.findIndex((d) => d.uri === uri);
+      if (i >= 0) {
+        setActiveIdx(i);
+        return prev;
+      }
+      const next = [...prev, { uri, title }].slice(-MAX_DOCS);
+      setActiveIdx(next.findIndex((d) => d.uri === uri));
+      return next;
+    });
     setShowRecent(false);
     try { setRecent(await pushRecent(uri, title)); } catch {}
   };
 
-  const openSplit = async (uri: string, title: string) => {
-    if (uri === mainUri) return;
-    setSplitUri(uri);
-    setSplitTitle(title);
-    setShowRecent(false);
-    try { setRecent(await pushRecent(uri, title)); } catch {}
-  };
+  const closeDoc = useCallback((uri: string) => {
+    setClosingUri(null);
+    setDocs((prev) => {
+      const i = prev.findIndex((d) => d.uri === uri);
+      if (i < 0) return prev;
+      const next = prev.filter((d) => d.uri !== uri);
+      if (next.length === 0) {
+        setTimeout(() => navigation.goBack(), 50);
+        return prev;
+      }
+      setActiveIdx((a) => {
+        if (i < a) return a - 1;
+        if (i === a) return Math.min(a, next.length - 1);
+        return a;
+      });
+      setSplitIdx((sIdx) => {
+        if (sIdx === null) return null;
+        if (i === sIdx) return null;
+        return i < sIdx ? sIdx - 1 : sIdx;
+      });
+      return next;
+    });
+  }, [navigation]);
 
   const rules = useMemo(() => ({
     fence: (node: any) => <CodeBlock key={node.key} code={nodeText(node)} rt={rt} />,
@@ -214,11 +378,15 @@ export default function ReaderScreen({ route, navigation }: Props) {
     };
   }, [rt, fontSize, lineHeight, fontFamily, isDarkReading]);
 
-  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const makeOnScroll = (uri: string, isMain: boolean) => (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     const max = Math.max(1, contentSize.height - layoutMeasurement.height);
-    setProgress(Math.max(0, Math.min(1, contentOffset.y / max)));
+    const frac = Math.max(0, Math.min(1, contentOffset.y / max));
+    trackScroll(uri, frac);
+    if (isMain) setProgress(frac);
   };
+
+  const makeContentSize = (uri: string) => (_w: number, h: number) => restoreFor(uri, h);
 
   const jumpToHeading = (h: Heading) => {
     setShowTOC(false);
@@ -226,13 +394,13 @@ export default function ReaderScreen({ route, navigation }: Props) {
     main.chunks.forEach((c, i) => { if (c.start <= h.charIndex) idx = i; });
     setTimeout(() => {
       try {
-        listRef.current?.scrollToIndex({ index: idx, viewPosition: 0, animated: true });
+        listRefs.current[active.uri]?.scrollToIndex({ index: idx, viewPosition: 0, animated: true });
       } catch {}
     }, 100);
   };
 
   const openEditor = () => {
-    navigation.navigate('Editor', { uri: mainUri, title: mainTitle });
+    navigation.navigate('Editor', { uri: active.uri, title: active.title });
   };
 
   const openMenuAt = (e: any) => {
@@ -250,8 +418,10 @@ export default function ReaderScreen({ route, navigation }: Props) {
     menuActions.push({ icon: 'list-outline', label: 'Оглавление', onPress: () => setShowTOC(true) });
   }
   menuActions.push({ icon: 'pencil-outline', label: 'Редактировать', onPress: openEditor });
-  if (!splitUri) {
+  if (splitIdx === null) {
     menuActions.push({ icon: 'columns-outline', label: 'Второй документ рядом', onPress: () => setShowRecent(true) });
+  } else {
+    menuActions.push({ icon: 'close-outline', label: 'Закрыть второй документ', onPress: () => setSplitIdx(null) });
   }
   menuActions.push({ icon: 'layers-outline', label: 'Быстрое переключение', onPress: () => setShowRecent(true) });
   menuActions.push(showUI
@@ -260,10 +430,11 @@ export default function ReaderScreen({ route, navigation }: Props) {
   menuActions.push({ icon: 'settings-outline', label: 'Настройки чтения', onPress: () => setShowSettings(true) });
 
   const s = styles(insets);
+  const { width: SW, height: SH } = Dimensions.get('window');
 
   const renderPane = (
+    doc: Doc,
     chunks: Chunk[],
-    title: string,
     isSplit: boolean,
     onCloseSplit?: () => void,
     onSwap?: () => void,
@@ -271,7 +442,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
     <View style={[s.pane, isSplit && { borderLeftWidth: 1, borderLeftColor: rt.text + '20' }]}>
       {isSplit && (
         <View style={[s.splitBar, { backgroundColor: rt.bg, borderBottomColor: rt.text + '15' }]}>
-          <Text style={[s.splitTitle, { color: rt.text }]} numberOfLines={1}>{title}</Text>
+          <Text style={[s.splitTitle, { color: rt.text }]} numberOfLines={1}>{doc.title}</Text>
           {onSwap && (
             <Pressable onPress={onSwap} hitSlop={8} style={s.iconBtn}>
               <Ionicons name="swap-horizontal-outline" size={18} color={rt.text} />
@@ -291,14 +462,15 @@ export default function ReaderScreen({ route, navigation }: Props) {
         }}
       >
         <FlatList
-          ref={isSplit ? undefined : listRef}
-          key={remountKey + (isSplit ? '|split' : '|main')}
+          ref={(r) => { listRefs.current[doc.uri] = r; }}
+          key={remountKey + '|' + doc.uri}
           data={chunks}
           keyExtractor={(_, i) => String(i)}
           style={s.scroll}
           contentContainerStyle={[s.content, { maxWidth: contentWidth, alignSelf: 'center', width: '100%' }]}
           renderItem={({ item }) => <ChunkView text={item.text} mdStyle={mdStyle} rules={rules} />}
-          onScroll={isSplit ? undefined : onScroll}
+          onScroll={makeOnScroll(doc.uri, !isSplit)}
+          onContentSizeChange={makeContentSize(doc.uri)}
           scrollEventThrottle={16}
           removeClippedSubviews={true}
           initialNumToRender={2}
@@ -309,6 +481,9 @@ export default function ReaderScreen({ route, navigation }: Props) {
     </View>
   );
 
+  const bubbleDocs = docs.filter((d) => d.uri !== active.uri);
+  const closeZone = { x: SW / 2 - 40, y: SH - 150, w: 80, h: 80 };
+
   return (
     <View style={[s.container, { backgroundColor: rt.bg }]}>
       {showUI && (
@@ -317,7 +492,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
             <Pressable onPress={() => navigation.goBack()} style={s.backBtn}>
               <Ionicons name="chevron-back" size={24} color={rt.text} />
             </Pressable>
-            <Text style={[s.title, { color: rt.text }]} numberOfLines={1}>{mainTitle}</Text>
+            <Text style={[s.title, { color: rt.text }]} numberOfLines={1}>{active.title}</Text>
             <Text style={[s.meta, { color: rt.text + '60' }]}>
               {main.stats.words} сл. · ~{main.stats.readTime} мин
             </Text>
@@ -329,20 +504,59 @@ export default function ReaderScreen({ route, navigation }: Props) {
         </>
       )}
 
-      <View style={{ flex: 1, flexDirection: splitUri ? 'row' : 'column' }}>
-        {renderPane(main.chunks, mainTitle, false)}
-        {splitUri && renderPane(
+      <View style={{ flex: 1, flexDirection: splitDoc ? 'row' : 'column' }}>
+        {renderPane(active, main.chunks, false)}
+        {splitDoc && renderPane(
+          splitDoc,
           split.chunks,
-          splitTitle,
           true,
-          () => setSplitUri(null),
+          () => setSplitIdx(null),
           () => {
-            const u = mainUri, t = mainTitle;
-            setMainUri(splitUri); setMainTitle(splitTitle);
-            setSplitUri(u); setSplitTitle(t);
+            const a = activeIdx, sp = splitIdx;
+            if (sp === null) return;
+            setDocs((prev) => {
+              const next = [...prev];
+              const t = next[a];
+              next[a] = next[sp];
+              next[sp] = t;
+              return next;
+            });
+            setActiveIdx(sp);
+            setSplitIdx(a);
           },
         )}
       </View>
+
+      {/* Плавающие доки */}
+      {bubbleDocs.map((d, i) => (
+        <DocBubble
+          key={d.uri}
+          doc={d}
+          initial={bubPos[d.uri] ?? { x: SW - 60, y: 150 + i * 62 }}
+          color={theme.accent}
+          closing={closingUri === d.uri}
+          onTap={(uri) => {
+            const idx = docs.findIndex((x) => x.uri === uri);
+            if (idx >= 0) setActiveIdx(idx);
+          }}
+          onMove={(uri, pos) => setBubPos((p) => ({ ...p, [uri]: pos }))}
+          onHold={(uri) => setClosingUri(uri)}
+          onDrop={(uri) => {
+            const bx = (bubPos[uri] ?? { x: 0, y: 0 }).x + 24;
+            const by = (bubPos[uri] ?? { x: 0, y: 0 }).y + 24;
+            if (bx >= closeZone.x && bx <= closeZone.x + closeZone.w && by >= closeZone.y && by <= closeZone.y + closeZone.h) {
+              closeDoc(uri);
+            } else {
+              setClosingUri(null);
+            }
+          }}
+        />
+      ))}
+      {closingUri && (
+        <View style={[s.closeZone, { left: closeZone.x, top: closeZone.y, width: closeZone.w, height: closeZone.h }]}>
+          <Ionicons name="close-circle" size={56} color="#EF4444" />
+        </View>
+      )}
 
       <ReaderTOC
         visible={showTOC}
@@ -358,7 +572,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
         visible={showMenu}
         x={menuAt.x}
         y={menuAt.y}
-        title={mainTitle}
+        title={active.title}
         theme={theme}
         onClose={() => setShowMenu(false)}
         actions={menuActions}
@@ -374,21 +588,39 @@ export default function ReaderScreen({ route, navigation }: Props) {
             <FlatList
               data={recent}
               keyExtractor={(item) => item.uri}
-              renderItem={({ item }) => (
-                <View style={[s.recentRow, { borderBottomColor: theme.divider }]}>
-                  <Pressable onPress={() => openMain(item.uri, item.title)} style={{ flex: 1 }}>
-                    <Text style={[s.recentName, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
-                    <Text style={[s.recentMeta, { color: theme.textSecondary }]}>
-                      {new Date(item.ts).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                  </Pressable>
-                  {!splitUri && item.uri !== mainUri && (
-                    <Pressable onPress={() => openSplit(item.uri, item.title)} hitSlop={8} style={s.iconBtn}>
-                      <Ionicons name="copy-outline" size={20} color={theme.accent} />
+              renderItem={({ item }) => {
+                const isOpen = docs.some((d) => d.uri === item.uri);
+                return (
+                  <View style={[s.recentRow, { borderBottomColor: theme.divider }]}>
+                    <Pressable onPress={() => openDoc(item.uri, item.title)} style={{ flex: 1 }}>
+                      <Text style={[s.recentName, { color: theme.text }]} numberOfLines={1}>
+                        {isOpen ? '● ' : ''}{item.title}
+                      </Text>
+                      <Text style={[s.recentMeta, { color: theme.textSecondary }]}>
+                        {new Date(item.ts).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </Text>
                     </Pressable>
-                  )}
-                </View>
-              )}
+                    {splitIdx === null && item.uri !== active.uri && (
+                      <Pressable
+                        onPress={() => {
+                          let idx = docs.findIndex((d) => d.uri === item.uri);
+                          if (idx < 0) {
+                            const next = [...docs, { uri: item.uri, title: item.title }].slice(-MAX_DOCS);
+                            setDocs(next);
+                            idx = next.findIndex((d) => d.uri === item.uri);
+                          }
+                          setSplitIdx(idx);
+                          setShowRecent(false);
+                        }}
+                        hitSlop={8}
+                        style={s.iconBtn}
+                      >
+                        <Ionicons name="columns-outline" size={20} color={theme.accent} />
+                      </Pressable>
+                    )}
+                  </View>
+                );
+              }}
             />
           </View>
         </View>
@@ -498,6 +730,10 @@ function styles(insets: any) {
       paddingTop: insets.top > 0 ? 4 : 8, paddingBottom: 4, borderBottomWidth: 1,
     },
     splitTitle: { flex: 1, fontSize: 13, fontWeight: '600', marginHorizontal: 4 },
+    closeZone: {
+      position: 'absolute', alignItems: 'center', justifyContent: 'center',
+      backgroundColor: 'rgba(239,68,68,0.12)', borderRadius: 40, zIndex: 40,
+    },
     sheetOverlay: { flex: 1, justifyContent: 'flex-end' },
     sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
     sheet: {
