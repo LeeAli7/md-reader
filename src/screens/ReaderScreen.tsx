@@ -300,6 +300,8 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const [showMenu, setShowMenu] = useState(false);
   const [menuAt, setMenuAt] = useState({ x: 0, y: 0 });
   const [showRecent, setShowRecent] = useState(false);
+  // Свитчер в режиме «в сплит»: выбор файла открывает его второй панелью.
+  const [splitPick, setSplitPick] = useState(false);
   const [switchTab, setSwitchTab] = useState<'recent' | 'files'>('recent');
   const [treeData, setTreeData] = useState<FolderNode[] | null>(null);
   const [treeFolder, setTreeFolder] = useState<string | null>(null);
@@ -321,13 +323,14 @@ export default function ReaderScreen({ route, navigation }: Props) {
   // Позиции чтения: доля 0..1 на uri. Пишем троттлом, читаем когда известны
   // ОБЕ высоты (контент + вьюпорт) и контент загружен — иначе рестор мимо.
   const posMap = useRef<Record<string, number>>({});
-  const restored = useRef<Set<string>>(new Set());
+  // Гейт ресторa: uri→rev, на котором рестор уже отработал.
+  // Пустой список (контент ещё грузится) рестор не маркирует — ждём чанки той же ревизии.
+  const restored = useRef<Record<string, number>>({});
   const lastFrac = useRef<Record<string, number>>({});
   const saveTimer = useRef<any>(null);
   const listRefs = useRef<Record<string, FlatList | null>>({});
   const contentH = useRef<Record<string, number>>({});
   const viewportH = useRef<Record<string, number>>({});
-  const chunksReady = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     return () => {
@@ -355,19 +358,20 @@ export default function ReaderScreen({ route, navigation }: Props) {
     return f;
   }, [flushLater]);
 
-  const tryRestore = useCallback((uri: string) => {
-    if (!uri || restored.current.has(uri)) return;
+  const tryRestore = useCallback((uri: string, chunkCount: number, rev: number) => {
+    if (!uri || chunkCount === 0) return;
+    if ((restored.current[uri] ?? -1) >= rev) return;
     const ch = contentH.current[uri] ?? 0;
     const vh = viewportH.current[uri] ?? 0;
-    if (!chunksReady.current[uri]) return;
-    if (vh <= 0 || ch <= vh + 4) {
+    if (vh <= 0 || ch <= 0) return;
+    if (ch <= vh + 4) {
       // Крутить нечего (всё влезает) — помечаем готовым, позиция 0.
-      restored.current.add(uri);
+      restored.current[uri] = rev;
       posMap.current[uri] = 0;
       lastFrac.current[uri] = 0;
       return;
     }
-    restored.current.add(uri);
+    restored.current[uri] = rev;
     (async () => {
       try {
         const f = await getPosition(uri);
@@ -402,16 +406,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation, active.uri, splitDoc?.uri]);
 
-  const mainRev = main.rev;
-  const splitRev = split.rev;
-  useEffect(() => {
-    if (mainRev > 1) restored.current.delete(active.uri);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mainRev]);
-  useEffect(() => {
-    if (splitDoc && splitRev > 1) restored.current.delete(splitDoc.uri);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [splitRev]);
+  // (rev-эффекты больше не нужны: гейт tryRestore сам ключуется ревизией.)
 
   useEffect(() => { loadRecent(); }, [loadRecent]);
 
@@ -420,7 +415,6 @@ export default function ReaderScreen({ route, navigation }: Props) {
     if (ix < 0) {
       const next = [...docs, { uri, title }].slice(-MAX_DOCS);
       const ni = next.findIndex((d) => d.uri === uri);
-      restored.current.delete(uri);
       setDocs(next);
       setSplitIdx(ni);
     } else {
@@ -437,7 +431,6 @@ export default function ReaderScreen({ route, navigation }: Props) {
     } else {
       const next = [...docs, { uri, title }].slice(-MAX_DOCS);
       const ni = next.findIndex((d) => d.uri === uri);
-      restored.current.delete(uri);
       setDocs(next);
       setActiveIdx(ni);
     }
@@ -533,24 +526,18 @@ export default function ReaderScreen({ route, navigation }: Props) {
     if (isMain) setProgress(frac);
   };
 
-  const makeContentSize = (uri: string) => (_w: number, h: number) => {
+  const makeContentSize = (uri: string, chunkCount: number, rev: number) => (_w: number, h: number) => {
     contentH.current[uri] = h;
-    chunksReady.current[uri] = true;
-    tryRestore(uri);
+    tryRestore(uri, chunkCount, rev);
   };
 
-  const makeLayout = (uri: string) => (e: any) => {
+  const makeLayout = (uri: string, chunkCount: number, rev: number) => (e: any) => {
     viewportH.current[uri] = e.nativeEvent.layout.height;
-    tryRestore(uri);
+    tryRestore(uri, chunkCount, rev);
   };
 
-  // Активация дока: сбрасываем флаг ресторa, чтобы список встал на saved-позицию.
+  // Активация дока: рестор отработает заново по гейту rev (флаг сбрасывать не надо).
   const activateIdx = useCallback((i: number) => {
-    setDocs((prev) => {
-      const d = prev[i];
-      if (d) restored.current.delete(d.uri);
-      return prev;
-    });
     setActiveIdx(i);
   }, []);
 
@@ -567,6 +554,21 @@ export default function ReaderScreen({ route, navigation }: Props) {
 
   const openEditor = () => {
     navigation.navigate('Editor', { uri: active.uri, title: active.title });
+  };
+
+  // Выбор из свитчера: обычный режим — открыть, режим «в сплит» — второй панелью.
+  const pickFromSwitcher = (uri: string, title: string) => {
+    if (splitPick) {
+      setSplitPick(false);
+      openSplitDoc(uri, title);
+    } else {
+      openDoc(uri, title);
+    }
+  };
+
+  const closeSwitcher = () => {
+    setSplitPick(false);
+    setShowRecent(false);
   };
 
   const openSwitcherTab = async (tab: 'recent' | 'files') => {
@@ -626,7 +628,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
   }
   menuActions.push({ icon: 'pencil-outline', label: 'Редактировать', onPress: openEditor });
   if (splitIdx === null) {
-    menuActions.push({ icon: 'copy-outline', label: 'Второй документ снизу', onPress: () => setShowRecent(true) });
+    menuActions.push({ icon: 'copy-outline', label: 'Разделить экран', onPress: () => { setSplitPick(true); setShowRecent(true); } });
   } else {
     menuActions.push({ icon: 'close-outline', label: 'Закрыть второй документ', onPress: () => setSplitIdx(null) });
   }
@@ -641,7 +643,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
 
   const renderPane = (
     doc: Doc,
-    dd: { chunks: Chunk[]; kind: DocKind },
+    dd: { chunks: Chunk[]; kind: DocKind; rev: number },
     isSplit: boolean,
     onCloseSplit?: () => void,
     onSwap?: () => void,
@@ -671,7 +673,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
       ) : (
       <View
         style={{ flex: 1 }}
-        onLayout={makeLayout(doc.uri)}
+        onLayout={makeLayout(doc.uri, dd.chunks.length, dd.rev)}
         onTouchStart={(e) => { touchY.current = e.nativeEvent.pageY; }}
         onTouchEnd={(e) => {
           // Тап без скролла — вкл/выкл иммерсив. Свайпы не трогаем.
@@ -687,7 +689,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
           contentContainerStyle={[s.content, { maxWidth: contentWidth, alignSelf: 'center', width: '100%' }]}
           renderItem={({ item }) => <ChunkView text={item.text} mdStyle={mdStyle} rules={rules} />}
           onScroll={makeOnScroll(doc.uri, !isSplit)}
-          onContentSizeChange={makeContentSize(doc.uri)}
+          onContentSizeChange={makeContentSize(doc.uri, dd.chunks.length, dd.rev)}
           scrollEventThrottle={16}
           removeClippedSubviews={true}
           initialNumToRender={2}
@@ -816,12 +818,14 @@ export default function ReaderScreen({ route, navigation }: Props) {
       />
 
       {/* Быстрое переключение + второй документ */}
-      <Modal visible={showRecent} transparent animationType="slide" onRequestClose={() => setShowRecent(false)}>
+      <Modal visible={showRecent} transparent animationType="slide" onRequestClose={closeSwitcher}>
         <View style={s.sheetOverlay}>
-          <Pressable style={s.sheetBackdrop} onPress={() => setShowRecent(false)} />
+          <Pressable style={s.sheetBackdrop} onPress={closeSwitcher} />
           <View style={[s.sheet, { backgroundColor: theme.surface }]}>
             <View style={s.sheetHandle} />
-            <Text style={[s.sheetTitle, { color: theme.text }]}>Документы</Text>
+            <Text style={[s.sheetTitle, { color: theme.text }]}>
+              {splitPick ? 'В какой файл разделить?' : 'Документы'}
+            </Text>
             <View style={s.switchTabs}>
               {([['recent', 'Недавние'], ['files', 'Файлы']] as const).map(([k, label]) => (
                 <Pressable
@@ -843,7 +847,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
                 const isOpen = docs.some((d) => d.uri === item.uri);
                 return (
                   <View style={[s.recentRow, { borderBottomColor: theme.divider }]}>
-                    <Pressable onPress={() => openDoc(item.uri, item.title)} style={{ flex: 1 }}>
+                    <Pressable onPress={() => pickFromSwitcher(item.uri, item.title)} style={{ flex: 1 }}>
                       <Text style={[s.recentName, { color: theme.text }]} numberOfLines={1}>
                         {isOpen ? '● ' : ''}{item.title}
                       </Text>
@@ -851,7 +855,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
                         {new Date(item.ts).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                       </Text>
                     </Pressable>
-                    {splitIdx === null && item.uri !== active.uri && (
+                    {splitIdx === null && !splitPick && item.uri !== active.uri && (
                       <Pressable
                         onPress={() => openSplitDoc(item.uri, item.title)}
                         hitSlop={8}
@@ -895,12 +899,12 @@ export default function ReaderScreen({ route, navigation }: Props) {
                   const isOpen = docs.some((d) => d.uri === item.uri);
                   return (
                     <View style={[s.recentRow, { borderBottomColor: theme.divider }]}>
-                      <Pressable onPress={() => openDoc(item.uri, item.title)} style={{ flex: 1 }}>
+                      <Pressable onPress={() => pickFromSwitcher(item.uri, item.title)} style={{ flex: 1 }}>
                         <Text style={[s.recentName, { color: theme.text }]} numberOfLines={1}>
                           {isOpen ? '● ' : ''}{item.title}
                         </Text>
                       </Pressable>
-                      {splitIdx === null && item.uri !== active.uri && (
+                      {splitIdx === null && !splitPick && item.uri !== active.uri && (
                         <Pressable
                           onPress={() => openSplitDoc(item.uri, item.title)}
                           hitSlop={8}
