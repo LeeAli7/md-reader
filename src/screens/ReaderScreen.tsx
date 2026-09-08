@@ -617,7 +617,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
   }
   menuActions.push({ icon: 'pencil-outline', label: 'Редактировать', onPress: openEditor });
   if (splitIdx === null) {
-    menuActions.push({ icon: 'columns-outline', label: 'Второй документ снизу', onPress: () => setShowRecent(true) });
+    menuActions.push({ icon: 'copy-outline', label: 'Второй документ снизу', onPress: () => setShowRecent(true) });
   } else {
     menuActions.push({ icon: 'close-outline', label: 'Закрыть второй документ', onPress: () => setSplitIdx(null) });
   }
@@ -844,7 +844,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
                         hitSlop={8}
                         style={s.iconBtn}
                       >
-                        <Ionicons name="columns-outline" size={20} color={theme.accent} />
+                        <Ionicons name="copy-outline" size={20} color={theme.accent} />
                       </Pressable>
                     )}
                   </View>
@@ -893,7 +893,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
                           hitSlop={8}
                           style={s.iconBtn}
                         >
-                          <Ionicons name="columns-outline" size={20} color={theme.accent} />
+                          <Ionicons name="copy-outline" size={20} color={theme.accent} />
                         </Pressable>
                       )}
                     </View>
