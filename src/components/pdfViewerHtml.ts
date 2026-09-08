@@ -52,7 +52,7 @@ export function buildPdfHtml(b64: string): string {
   const safeWorker = JSON.stringify(WORKER_SRC).split('<' + '/script').join('<\\/script');
   return '<!DOCTYPE html><html><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">' +
-    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\' \'unsafe-eval\'; style-src \'unsafe-inline\'; img-src blob: data:; worker-src blob:; child-src blob:; connect-src \'none\';">' +
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\' \'unsafe-eval\' blob:; style-src \'unsafe-inline\'; img-src blob: data:; worker-src blob:; child-src blob:; connect-src \'none\';">' +
     '<style>' + VIEWER_CSS + '</style></head><body>' +
     '<div id="bar"><span id="count"></span></div>' +
     '<div id="loading">Открываю PDF…</div>' +
