@@ -43,6 +43,7 @@
     "react-native-markdown-display": "^7.0.0",
     "react-native-safe-area-context": "^5.0.0",
     "react-native-screens": "~4.4.0",
+    "react-native-webview": "13.12.5",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

@@ -12,6 +12,7 @@ import * as FileSystem from 'expo-file-system';
 import { getRecent, pushRecent, getPosition, setPosition, type RecentEntry } from '../utils/metaStore';
 import { getFolderTree, type FolderNode } from '../utils/folderTree';
 import { loadReadable } from '../utils/documentLoader';
+import PdfView from '../components/PdfView';
 import { useTheme } from '../hooks/useTheme';
 import { readingThemes } from '../theme/tokens';
 import { fonts } from '../theme/fonts';
@@ -94,7 +95,7 @@ function sheetsToMarkdown(sheets: { name: string; rows: string[][] }[]): string 
   }).join('\n\n');
 }
 
-type DocKind = 'text' | 'sheet' | 'image' | 'binary';
+type DocKind = 'text' | 'sheet' | 'image' | 'pdf' | 'binary';
 
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'];
 
@@ -114,6 +115,14 @@ function useDoc(uri: string) {
           if (alive) {
             setKind('image');
             setContent(uri);
+            setRev((r) => r + 1);
+          }
+          return;
+        }
+        if (ext === 'pdf') {
+          if (alive) {
+            setKind('pdf');
+            setContent('');
             setRev((r) => r + 1);
           }
           return;
@@ -654,6 +663,10 @@ export default function ReaderScreen({ route, navigation }: Props) {
       {dd.kind === 'image' ? (
         <View style={[s.imageWrap, { backgroundColor: '#000' }]}>
           <Image source={{ uri: doc.uri }} style={s.image} resizeMode="contain" />
+        </View>
+      ) : dd.kind === 'pdf' ? (
+        <View style={{ flex: 1 }}>
+          <PdfView uri={doc.uri} />
         </View>
       ) : (
       <View
