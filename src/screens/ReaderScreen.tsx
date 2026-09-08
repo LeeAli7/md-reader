@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, Animated,
+  View, Text, Pressable, StyleSheet, Animated, Image,
   Modal, FlatList, NativeSyntheticEvent, NativeScrollEvent, Dimensions,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { exportFile } from '../utils/importExport';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
 import * as FileSystem from 'expo-file-system';
 import { getRecent, pushRecent, getPosition, setPosition, type RecentEntry } from '../utils/metaStore';
+import { getFolderTree, type FolderNode } from '../utils/folderTree';
 import { loadReadable } from '../utils/documentLoader';
 import { useTheme } from '../hooks/useTheme';
 import { readingThemes } from '../theme/tokens';
@@ -92,26 +94,54 @@ function sheetsToMarkdown(sheets: { name: string; rows: string[][] }[]): string 
   }).join('\n\n');
 }
 
+type DocKind = 'text' | 'sheet' | 'image' | 'binary';
+
+const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'];
+
 function useDoc(uri: string) {
   const [content, setContent] = useState('');
+  const [kind, setKind] = useState<DocKind>('text');
+  const [rev, setRev] = useState(0);
   const [tick, setTick] = useState(0);
+  const mtimeRef = useRef(0);
   useEffect(() => {
-    if (!uri) { setContent(''); return; }
+    if (!uri) { setContent(''); setKind('text'); return; }
     let alive = true;
     (async () => {
       try {
         const ext = uri.split('.').pop()?.toLowerCase() ?? '';
+        if (IMAGE_EXTS.includes(ext)) {
+          if (alive) {
+            setKind('image');
+            setContent(uri);
+            setRev((r) => r + 1);
+          }
+          return;
+        }
+        const info = await FileSystem.getInfoAsync(uri);
+        if (alive) mtimeRef.current = info.exists ? (info.modificationTime ?? 0) : 0;
         const loaded = await loadReadable(uri, ext);
         if (!alive) return;
-        if (loaded.kind === 'text') setContent(loaded.text ?? '');
-        else if (loaded.kind === 'sheet') setContent(sheetsToMarkdown(loaded.sheets ?? []));
-        else setContent(`# Не предпросмотр\n\n${loaded.note ?? 'Этот формат открывается через «Поделиться».'}`);
+        if (loaded.kind === 'text') { setKind('text'); setContent(loaded.text ?? ''); }
+        else if (loaded.kind === 'sheet') { setKind('sheet'); setContent(sheetsToMarkdown(loaded.sheets ?? [])); }
+        else { setKind('binary'); setContent(`# Не предпросмотр\n\n${loaded.note ?? 'Этот формат открывается через «Поделиться».'}`); }
+        setRev((r) => r + 1);
       } catch {
-        if (alive) setContent('# Ошибка чтения файла\n\nНе удалось открыть файл.');
+        if (alive) { setKind('text'); setContent('# Ошибка чтения файла\n\nНе удалось открыть файл.'); }
       }
     })();
     return () => { alive = false; };
   }, [uri, tick]);
+  // Перезачитать только если файл реально изменился (правка из редактора).
+  // Пустой reload при каждом фокусе сносил позицию — больше так не делаем.
+  const reloadIfChanged = useCallback(async () => {
+    if (!uri) return;
+    try {
+      const info = await FileSystem.getInfoAsync(uri);
+      const mt = info.exists ? (info.modificationTime ?? 0) : 0;
+      if (mt !== mtimeRef.current) setTick((t) => t + 1);
+    } catch {}
+  }, [uri]);
   const reload = useCallback(() => setTick((t) => t + 1), []);
   const headings = useMemo(() => parseHeadings(content), [content]);
   const chunks = useMemo(() => splitMarkdown(content), [content]);
@@ -119,7 +149,7 @@ function useDoc(uri: string) {
     const words = content.split(/\s+/).filter(Boolean).length;
     return { words, readTime: Math.max(1, Math.ceil(words / 200)) };
   }, [content]);
-  return { content, headings, chunks, stats, reload };
+  return { content, kind, rev, headings, chunks, stats, reload, reloadIfChanged };
 }
 
 const ChunkView = React.memo(function ChunkView({ text, mdStyle, rules }: { text: string; mdStyle: any; rules: any }) {
@@ -261,6 +291,10 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const [showMenu, setShowMenu] = useState(false);
   const [menuAt, setMenuAt] = useState({ x: 0, y: 0 });
   const [showRecent, setShowRecent] = useState(false);
+  const [switchTab, setSwitchTab] = useState<'recent' | 'files'>('recent');
+  const [treeData, setTreeData] = useState<FolderNode[] | null>(null);
+  const [treeFolder, setTreeFolder] = useState<string | null>(null);
+  const [treeFiles, setTreeFiles] = useState<{ uri: string; title: string }[]>([]);
   const [showUI, setShowUI] = useState(true);
   const [progress, setProgress] = useState(0);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
@@ -347,16 +381,28 @@ export default function ReaderScreen({ route, navigation }: Props) {
     try { setRecent(await getRecent()); } catch {}
   }, []);
 
-  // Перечитываем файлы при возврате из редактора — правки видны сразу.
+  // Возврат из редактора: перезачитываем только реально изменившиеся файлы,
+  // иначе позиция жива. Новый контент сносит restored — tryRestore отрабатывает заново.
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
-      main.reload();
-      if (splitDoc) split.reload();
+      main.reloadIfChanged();
+      if (splitDoc) split.reloadIfChanged();
       loadRecent();
     });
     return unsub;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation, active.uri, splitDoc?.uri]);
+
+  const mainRev = main.rev;
+  const splitRev = split.rev;
+  useEffect(() => {
+    if (mainRev > 1) restored.current.delete(active.uri);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mainRev]);
+  useEffect(() => {
+    if (splitDoc && splitRev > 1) restored.current.delete(splitDoc.uri);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [splitRev]);
 
   useEffect(() => { loadRecent(); }, [loadRecent]);
 
@@ -514,6 +560,47 @@ export default function ReaderScreen({ route, navigation }: Props) {
     navigation.navigate('Editor', { uri: active.uri, title: active.title });
   };
 
+  const openSwitcherTab = async (tab: 'recent' | 'files') => {
+    setSwitchTab(tab);
+    if (tab === 'files' && !treeData) {
+      try {
+        setTreeData(await getFolderTree());
+      } catch {
+        setTreeData([]);
+      }
+    }
+  };
+
+  const pickTreeFolder = async (uri: string | null) => {
+    setTreeFolder(uri);
+    if (!uri) { setTreeFiles([]); return; }
+    try {
+      const items = await FileSystem.readDirectoryAsync(uri);
+      const out: { uri: string; title: string }[] = [];
+      for (const name of items) {
+        const furi = uri + name;
+        const info = await FileSystem.getInfoAsync(furi);
+        if (!info.isDirectory) out.push({ uri: furi, title: name });
+      }
+      out.sort((a, b) => a.title.localeCompare(b.title));
+      setTreeFiles(out);
+    } catch {
+      setTreeFiles([]);
+    }
+  };
+
+  const flatFolders = useMemo(() => {
+    const out: { node: FolderNode; depth: number }[] = [];
+    const walk = (nodes: FolderNode[], depth: number) => {
+      for (const n of nodes) {
+        out.push({ node: n, depth });
+        walk(n.children ?? [], depth + 1);
+      }
+    };
+    if (treeData) walk(treeData, 0);
+    return out;
+  }, [treeData]);
+
   const openMenuAt = (e: any) => {
     const { pageX, pageY } = e.nativeEvent ?? {};
     const { width: SW } = Dimensions.get('window');
@@ -530,7 +617,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
   }
   menuActions.push({ icon: 'pencil-outline', label: 'Редактировать', onPress: openEditor });
   if (splitIdx === null) {
-    menuActions.push({ icon: 'copy-outline', label: 'Второй документ рядом', onPress: () => setShowRecent(true) });
+    menuActions.push({ icon: 'columns-outline', label: 'Второй документ снизу', onPress: () => setShowRecent(true) });
   } else {
     menuActions.push({ icon: 'close-outline', label: 'Закрыть второй документ', onPress: () => setSplitIdx(null) });
   }
@@ -545,18 +632,18 @@ export default function ReaderScreen({ route, navigation }: Props) {
 
   const renderPane = (
     doc: Doc,
-    chunks: Chunk[],
+    dd: { chunks: Chunk[]; kind: DocKind },
     isSplit: boolean,
     onCloseSplit?: () => void,
     onSwap?: () => void,
   ) => (
-    <View style={[s.pane, isSplit && { borderLeftWidth: 1, borderLeftColor: rt.text + '20' }]}>
+    <View style={[s.pane, isSplit && { borderTopWidth: 1, borderTopColor: rt.text + '20' }]}>
       {isSplit && (
         <View style={[s.splitBar, { backgroundColor: rt.bg, borderBottomColor: rt.text + '15' }]}>
           <Text style={[s.splitTitle, { color: rt.text }]} numberOfLines={1}>{doc.title}</Text>
           {onSwap && (
             <Pressable onPress={onSwap} hitSlop={8} style={s.iconBtn}>
-              <Ionicons name="swap-horizontal-outline" size={18} color={rt.text} />
+              <Ionicons name="swap-vertical-outline" size={18} color={rt.text} />
             </Pressable>
           )}
           <Pressable onPress={onCloseSplit} hitSlop={8} style={s.iconBtn}>
@@ -564,6 +651,11 @@ export default function ReaderScreen({ route, navigation }: Props) {
           </Pressable>
         </View>
       )}
+      {dd.kind === 'image' ? (
+        <View style={[s.imageWrap, { backgroundColor: '#000' }]}>
+          <Image source={{ uri: doc.uri }} style={s.image} resizeMode="contain" />
+        </View>
+      ) : (
       <View
         style={{ flex: 1 }}
         onLayout={makeLayout(doc.uri)}
@@ -576,7 +668,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
         <FlatList
           ref={(r) => { listRefs.current[doc.uri] = r; }}
           key={remountKey + '|' + doc.uri}
-          data={chunks}
+          data={dd.chunks}
           keyExtractor={(_, i) => String(i)}
           style={s.scroll}
           contentContainerStyle={[s.content, { maxWidth: contentWidth, alignSelf: 'center', width: '100%' }]}
@@ -589,7 +681,20 @@ export default function ReaderScreen({ route, navigation }: Props) {
           maxToRenderPerBatch={2}
           windowSize={5}
         />
+        {dd.kind === 'binary' && (
+          <Pressable
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              exportFile(doc.uri, doc.title).catch(() => {});
+            }}
+            style={[s.openVia, { backgroundColor: theme.accent }]}
+          >
+            <Ionicons name="share-outline" size={18} color="#FFF" />
+            <Text style={s.openViaText}>Открыть через…</Text>
+          </Pressable>
+        )}
       </View>
+      )}
     </View>
   );
 
@@ -616,11 +721,11 @@ export default function ReaderScreen({ route, navigation }: Props) {
         </>
       )}
 
-      <View style={{ flex: 1, flexDirection: splitDoc ? 'row' : 'column' }}>
-        {renderPane(active, main.chunks, false)}
+      <View style={{ flex: 1, flexDirection: 'column' }}>
+        {renderPane(active, main, false)}
         {splitDoc && renderPane(
           splitDoc,
-          split.chunks,
+          split,
           true,
           () => setSplitIdx(null),
           () => {
@@ -703,7 +808,21 @@ export default function ReaderScreen({ route, navigation }: Props) {
           <Pressable style={s.sheetBackdrop} onPress={() => setShowRecent(false)} />
           <View style={[s.sheet, { backgroundColor: theme.surface }]}>
             <View style={s.sheetHandle} />
-            <Text style={[s.sheetTitle, { color: theme.text }]}>Недавние документы</Text>
+            <Text style={[s.sheetTitle, { color: theme.text }]}>Документы</Text>
+            <View style={s.switchTabs}>
+              {([['recent', 'Недавние'], ['files', 'Файлы']] as const).map(([k, label]) => (
+                <Pressable
+                  key={k}
+                  onPress={() => openSwitcherTab(k)}
+                  style={[s.switchTab, switchTab === k && { backgroundColor: theme.accentSoft }]}
+                >
+                  <Text style={[s.switchTabText, { color: switchTab === k ? theme.accent : theme.textSecondary }]}>
+                    {label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            {switchTab === 'recent' ? (
             <FlatList
               data={recent}
               keyExtractor={(item) => item.uri}
@@ -725,13 +844,65 @@ export default function ReaderScreen({ route, navigation }: Props) {
                         hitSlop={8}
                         style={s.iconBtn}
                       >
-                        <Ionicons name="copy-outline" size={20} color={theme.accent} />
+                        <Ionicons name="columns-outline" size={20} color={theme.accent} />
                       </Pressable>
                     )}
                   </View>
                 );
               }}
             />
+            ) : (
+            <View style={{ flex: 1 }}>
+              {treeFolder && (
+                <Pressable onPress={() => pickTreeFolder(null)} style={s.backRow}>
+                  <Ionicons name="chevron-back" size={18} color={theme.accent} />
+                  <Text style={[s.backRowText, { color: theme.accent }]}>Все папки</Text>
+                </Pressable>
+              )}
+              {!treeFolder ? (
+              <FlatList
+                data={flatFolders}
+                keyExtractor={(item) => item.node.uri}
+                renderItem={({ item }) => (
+                  <Pressable
+                    onPress={() => pickTreeFolder(item.node.uri)}
+                    style={[s.tagRow, { borderBottomColor: theme.divider, paddingLeft: 4 + item.depth * 16 }]}
+                  >
+                    <Ionicons name="folder-outline" size={18} color={theme.textSecondary} />
+                    <Text style={[s.tagName, { color: theme.text }]} numberOfLines={1}>{item.node.name}</Text>
+                    <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+                  </Pressable>
+                )}
+              />
+              ) : (
+              <FlatList
+                data={treeFiles}
+                keyExtractor={(item) => item.uri}
+                renderItem={({ item }) => {
+                  const isOpen = docs.some((d) => d.uri === item.uri);
+                  return (
+                    <View style={[s.recentRow, { borderBottomColor: theme.divider }]}>
+                      <Pressable onPress={() => openDoc(item.uri, item.title)} style={{ flex: 1 }}>
+                        <Text style={[s.recentName, { color: theme.text }]} numberOfLines={1}>
+                          {isOpen ? '● ' : ''}{item.title}
+                        </Text>
+                      </Pressable>
+                      {splitIdx === null && item.uri !== active.uri && (
+                        <Pressable
+                          onPress={() => openSplitDoc(item.uri, item.title)}
+                          hitSlop={8}
+                          style={s.iconBtn}
+                        >
+                          <Ionicons name="columns-outline" size={20} color={theme.accent} />
+                        </Pressable>
+                      )}
+                    </View>
+                  );
+                }}
+              />
+              )}
+            </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -840,6 +1011,13 @@ function styles(insets: any) {
       paddingTop: insets.top > 0 ? 4 : 8, paddingBottom: 4, borderBottomWidth: 1,
     },
     splitTitle: { flex: 1, fontSize: 13, fontWeight: '600', marginHorizontal: 4 },
+    imageWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    image: { width: '100%', height: '100%' },
+    openVia: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+      marginHorizontal: 20, marginBottom: 24, paddingVertical: 14, borderRadius: 12,
+    },
+    openViaText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
     closeZone: {
       position: 'absolute', alignItems: 'center', justifyContent: 'center',
       backgroundColor: 'rgba(239,68,68,0.12)', borderRadius: 40, zIndex: 40,
@@ -854,7 +1032,14 @@ function styles(insets: any) {
       width: 36, height: 4, borderRadius: 2, backgroundColor: '#CCC',
       alignSelf: 'center', marginBottom: 16,
     },
-    sheetTitle: { fontSize: 18, fontWeight: '600', marginBottom: 12 },
+    sheetTitle: { fontSize: 18, fontWeight: '600', marginBottom: 8 },
+    switchTabs: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+    switchTab: { borderRadius: 99, paddingHorizontal: 16, paddingVertical: 8 },
+    switchTabText: { fontSize: 14, fontWeight: '600' },
+    tagRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth },
+    tagName: { flex: 1, fontSize: 15, fontWeight: '500' },
+    backRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8 },
+    backRowText: { fontSize: 15, fontWeight: '600' },
     recentRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
     recentName: { fontSize: 15, fontWeight: '500' },
     recentMeta: { fontSize: 12, marginTop: 2 },
