@@ -9,9 +9,8 @@
 //
 // Типы SPEC без слота в SmdBlock маппятся fail-open (по SPEC неизвестное →
 // theory): theorem/proof/example/summary/meta-links → theory (с подписью),
-// figure → theory с ![alt](src), cloze/occlude/match/order → unknown (тело
-// целиком — лицо показывает его как markdown), card-bi → две card,
-// numeric → quiz/free, task → theory + solution.
+// figure/occlude → theory с ![alt](src), card-bi → две card,
+// numeric/match/order → quiz с quizType, task → theory + solution.
 
 import type { SmdBlock, SmdDoc, SmdMeta } from './smdTypes';
 
@@ -156,6 +155,21 @@ function parseAttrs(s: string): Attrs {
   return attrs;
 }
 
+function stripMathWrap(s: string): string {
+  let t = s.trim();
+  // $$...$$, \[...\], \(...\), $...$ — срезаем внешние обёртки (KaTeX не тащим).
+  const pairs: [string, string][] = [['$$', '$$'], ['\\[', '\\]'], ['\\(', '\\)']];
+  for (const [a, b] of pairs) {
+    if (t.startsWith(a) && t.endsWith(b) && t.length > a.length + b.length) {
+      t = t.slice(a.length, t.length - b.length).trim();
+    }
+  }
+  if (t.startsWith('$') && t.endsWith('$') && t.length > 2 && !t.startsWith('$$')) {
+    t = t.slice(1, -1).trim();
+  }
+  return t;
+}
+
 function attrStr(a: Attrs, key: string): string | undefined {
   const v = a[key];
   return typeof v === 'string' ? v : undefined;
@@ -269,7 +283,7 @@ function fenceToBlocks(f: Fence, warn: (msg: string) => void): SmdBlock[] {
     case 'example':
       return [{ type: 'theory', ...(id ? { id } : {}), body: `**Пример**\n\n${body}` }];
     case 'formula':
-      return [{ type: 'formula', body }];
+      return [{ type: 'formula', body: stripMathWrap(body) }];
     case 'compare-table': {
       const t = parseMdTable(body);
       if (!t) {
@@ -307,7 +321,7 @@ function fenceToBlocks(f: Fence, warn: (msg: string) => void): SmdBlock[] {
       return out;
     }
     case 'cloze':
-      return [{ type: 'unknown', rawType: 'cloze', body }];
+      return [{ type: 'cloze', body }];
     case 'card-bi': {
       const pair = splitCard(body.replace(/\s*\n\s*/g, ' '));
       if (!pair) {
@@ -324,9 +338,10 @@ function fenceToBlocks(f: Fence, warn: (msg: string) => void): SmdBlock[] {
     case 'occlude': {
       const src = attrStr(a, 'src') ?? '';
       const boxes = attrStr(a, 'boxes') ?? '';
+      // fail-open в theory (не unknown): лицо рисует картинку+подпись.
       return [{
-        type: 'unknown', rawType: 'occlude',
-        body: src ? `![перекрытая схема](${src})${boxes ? `\nЗакрытые области: ${boxes}` : ''}` : body,
+        type: 'theory',
+        body: src ? `![перекрытая схема](${src})${boxes ? `\nЗакрытые области: ${boxes}` : ''}${body && body !== '' ? `\n\n${body}` : ''}` : (body || '*Перекрытая схема*'),
       }];
     }
     case 'quiz':
@@ -366,11 +381,14 @@ function fenceToBlocks(f: Fence, warn: (msg: string) => void): SmdBlock[] {
 }
 
 function parseQuiz(a: Attrs, body: string, line: number, warn: (msg: string) => void): SmdBlock[] {
+  const attrType = (attrStr(a, 'type') ?? '').toLowerCase();
   const lines = body.split('\n');
   const options: { text: string; correct: boolean }[] = [];
   const qLines: string[] = [];
   let answer: string | undefined;
-  let unit = '';
+  let tol: number | undefined;
+  let unit: string | undefined;
+  let accept: string[] | undefined;
   for (const line of lines) {
     const t = line.trim();
     if (!t) continue;
@@ -382,10 +400,21 @@ function parseQuiz(a: Attrs, body: string, line: number, warn: (msg: string) => 
     const am = ANSWER_RE.exec(t);
     if (am) {
       const parts = am[1].split('|').map((s) => s.trim()).filter(Boolean);
-      answer = parts[0] ?? '';
+      answer = stripQuotes(parts[0] ?? '');
       for (const p of parts.slice(1)) {
-        const um = /^unit\s*:\s*(.+)$/.exec(p);
-        if (um) unit = stripQuotes(um[1]);
+        const um = /^unit\s*:\s*(.+)$/i.exec(p);
+        if (um) { unit = stripQuotes(um[1]); continue; }
+        const tm = /^tol(?:erance)?\s*:\s*(.+)$/i.exec(p);
+        if (tm) { const n = parseFloat(stripQuotes(tm[1]).replace(',', '.')); if (!Number.isNaN(n)) tol = n; continue; }
+        const acm = /^accept\s*:\s*(.+)$/i.exec(p);
+        if (acm) {
+          accept = splitListValue(stripQuotes(acm[1])).map((s) => stripQuotes(s).trim()).filter(Boolean);
+          // accept в кавычках через «;» — тоже делим.
+          if (accept.length === 1 && accept[0].includes(';')) {
+            accept = accept[0].split(';').map((s) => stripQuotes(s.trim())).filter(Boolean);
+          }
+          continue;
+        }
       }
       continue;
     }
@@ -395,12 +424,55 @@ function parseQuiz(a: Attrs, body: string, line: number, warn: (msg: string) => 
   const points = pointsRaw !== undefined ? Math.max(1, parseInt(pointsRaw, 10) || 1) : 1;
   const explain = attrStr(a, 'explain');
   const qText = qLines.join('\n').trim();
+  const ex = explain ? { explain } : {};
+
+  // --- numeric: :::quiz{type="numeric"} + "> answer: 6 | tol: 0 | unit: ..." ---
+  if (attrType === 'numeric') {
+    if (answer === undefined) {
+      warn(`:::quiz numeric без answer (строка ${line}) — показан как есть`);
+      return [{ type: 'unknown', rawType: 'quiz', body }];
+    }
+    return [{
+      type: 'quiz', quizType: 'numeric',
+      question: qText || 'Вопрос',
+      answer, ...(tol !== undefined ? { tolerance: tol } : {}),
+      ...(unit ? { unit } : {}), ...ex, points,
+    }];
+  }
+
+  // --- match: строки "лево => право" (или «|», «::», «—») ---
+  if (attrType === 'match') {
+    const pairs: { left: string; right: string }[] = [];
+    for (const t of qLines) {
+      const s = t.replace(/^\s*[-*+]\s+/, '').replace(/^\s*\d+[.)]\s+/, '').trim();
+      const m = /^(.+?)\s*(=>|<=|<->|→|—|\s\|\s|::)\s*(.+)$/.exec(s);
+      if (m) pairs.push({ left: m[1].trim(), right: m[3].trim() });
+    }
+    if (pairs.length >= 2) {
+      // вопрос — первая строка без разделителя (если есть), иначе дефолт.
+      let question = 'Сопоставь пары';
+      if (qLines.length > pairs.length) question = qLines.slice(0, qLines.length - pairs.length).join('\n').trim() || question;
+      return [{ type: 'quiz', quizType: 'match', question, pairs, ...ex, points }];
+    }
+    // одиночная match-строка без пар — фолбэк ниже.
+  }
+
+  // --- order: нумерованные/маркированные строки = правильный порядок ---
+  if (attrType === 'order') {
+    const items = qLines
+      .map((t) => t.replace(/^\s*[-*+]\s+/, '').replace(/^\s*\d+[.)]\s+/, '').trim())
+      .filter(Boolean);
+    if (items.length >= 2) {
+      return [{ type: 'quiz', quizType: 'order', question: qText.split('\n')[0]?.trim() || 'Восстанови порядок', items, ...ex, points }];
+    }
+    warn(`:::quiz order без списка шагов (строка ${line}) — показан как есть`);
+    return [{ type: 'unknown', rawType: 'quiz', body }];
+  }
 
   if (options.length > 0) {
     const marked = options.filter((o) => o.correct).length;
-    const attrType = (attrStr(a, 'type') ?? '').toLowerCase();
     const quizType: 'single' | 'multi' =
-      attrType === 'multi' || marked > 1 || attrType === '' && marked > 1 ? 'multi' : 'single';
+      attrType === 'multi' || marked > 1 ? 'multi' : 'single';
     if (quizType === 'single' && marked !== 1) {
       warn(`:::quiz single без ровно одного [x] (строка ${line})`);
     }
@@ -413,7 +485,8 @@ function parseQuiz(a: Attrs, body: string, line: number, warn: (msg: string) => 
     return [{
       type: 'quiz', quizType: 'free',
       question: (qText || 'Вопрос') + (unit ? ` (ответ в ${unit})` : ''),
-      answer, ...(explain ? { explain } : {}), points,
+      answer, ...(accept && accept.length > 0 ? { accept } : {}),
+      ...(explain ? { explain } : {}), points,
     }];
   }
   // Q::A-тренажёр без опций (demo.smd: :::quiz title=... с «Вопрос::Ответ»).
