@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, Animated, Image,
+  View, Text, Pressable, StyleSheet, Animated, Image, ScrollView,
   Modal, FlatList, NativeSyntheticEvent, NativeScrollEvent, Dimensions,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { WebView } from 'react-native-webview';
 import { exportFile } from '../utils/importExport';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +14,9 @@ import { getRecent, pushRecent, getPosition, setPosition, type RecentEntry } fro
 import { getFolderTree, type FolderNode } from '../utils/folderTree';
 import { loadReadable } from '../utils/documentLoader';
 import PdfView from '../components/PdfView';
+import { SmdDocView } from '../smd/smdRender';
+import { mockSmdDoc, mockRichDoc, mockPages } from '../smd/smdMock';
+import type { SmdDoc, SheetDoc } from '../smd/smdTypes';
 import { useTheme } from '../hooks/useTheme';
 import { readingThemes } from '../theme/tokens';
 import { fonts } from '../theme/fonts';
@@ -95,7 +99,7 @@ function sheetsToMarkdown(sheets: { name: string; rows: string[][] }[]): string 
   }).join('\n\n');
 }
 
-type DocKind = 'text' | 'sheet' | 'image' | 'pdf' | 'binary';
+type DocKind = 'text' | 'sheet' | 'image' | 'pdf' | 'binary' | 'smd' | 'rich' | 'pages';
 
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'];
 
@@ -104,6 +108,12 @@ function useDoc(uri: string) {
   const [kind, setKind] = useState<DocKind>('text');
   const [rev, setRev] = useState(0);
   const [tick, setTick] = useState(0);
+  // Лицо .smd / rich / pages / sheets — данные мокаются под интерфейс Ares.
+  const [smdDoc, setSmdDoc] = useState<SmdDoc | null>(null);
+  const [richHtml, setRichHtml] = useState('');
+  const [pages, setPages] = useState<string[]>([]);
+  const [sheets, setSheets] = useState<SheetDoc[]>([]);
+  const [sheetIdx, setSheetIdx] = useState(0);
   const mtimeRef = useRef(0);
   useEffect(() => {
     if (!uri) { setContent(''); setKind('text'); return; }
@@ -129,10 +139,37 @@ function useDoc(uri: string) {
         }
         const info = await FileSystem.getInfoAsync(uri);
         if (alive) mtimeRef.current = info.exists ? (info.modificationTime ?? 0) : 0;
-        const loaded = await loadReadable(uri, ext);
+        // .smd — лицо: мок под интерфейс Ares { meta, blocks }, парсер приедет с движком.
+        if (ext === 'smd') {
+          const raw = await FileSystem.readAsStringAsync(uri).catch(() => '');
+          if (!alive) return;
+          setKind('smd');
+          setContent(raw);
+          setSmdDoc(mockSmdDoc(uri, raw));
+          setRev((r) => r + 1);
+          return;
+        }
+        // any: движок Ares добавит kind 'rich'/'pages' — лицо уже готово.
+        const loaded: any = await loadReadable(uri, ext);
         if (!alive) return;
-        if (loaded.kind === 'text') { setKind('text'); setContent(loaded.text ?? ''); }
-        else if (loaded.kind === 'sheet') { setKind('sheet'); setContent(sheetsToMarkdown(loaded.sheets ?? [])); }
+        // rich (docx с картинками: html+images) и pages (pptx/odt/epub) —
+        // ветки лица под движок Ares: сейчас движок их не отдаёт, фолбэк — моки.
+        if (loaded.kind === 'rich') {
+          setKind('rich');
+          setRichHtml(loaded.html ?? mockRichDoc(uri.split('/').pop() ?? '').html);
+          setContent('');
+        } else if (loaded.kind === 'pages') {
+          const pg: string[] = loaded.pages ?? mockPages(loaded.text ?? '').pages;
+          setKind('pages');
+          setPages(pg);
+          setContent(pg.join('\n\n'));
+        } else if (loaded.kind === 'text') { setKind('text'); setContent(loaded.text ?? ''); }
+        else if (loaded.kind === 'sheet') {
+          setKind('sheet');
+          setSheets((loaded.sheets ?? []) as SheetDoc[]);
+          setSheetIdx(0);
+          setContent(sheetsToMarkdown(loaded.sheets ?? []));
+        }
         else { setKind('binary'); setContent(`# Не предпросмотр\n\n${loaded.note ?? 'Этот формат открывается через «Поделиться».'}`); }
         setRev((r) => r + 1);
       } catch {
@@ -153,17 +190,52 @@ function useDoc(uri: string) {
   }, [uri]);
   const reload = useCallback(() => setTick((t) => t + 1), []);
   const headings = useMemo(() => parseHeadings(content), [content]);
-  const chunks = useMemo(() => splitMarkdown(content), [content]);
+  // Активный лист xlsx — только его таблица; .smd — один чанк (блоки целы).
+  const activeSheetMd = useMemo(() => {
+    if (kind !== 'sheet' || sheets.length === 0) return '';
+    return sheetsToMarkdown([sheets[Math.min(sheetIdx, sheets.length - 1)]]);
+  }, [kind, sheets, sheetIdx]);
+  const chunks = useMemo(() => {
+    if (kind === 'smd') return content ? [{ text: content, start: 0 }] : [];
+    if (kind === 'sheet') return splitMarkdown(activeSheetMd);
+    return splitMarkdown(content);
+  }, [content, kind, activeSheetMd]);
   const stats = useMemo(() => {
     const words = content.split(/\s+/).filter(Boolean).length;
     return { words, readTime: Math.max(1, Math.ceil(words / 200)) };
   }, [content]);
-  return { content, kind, rev, headings, chunks, stats, reload, reloadIfChanged };
+  return { content, kind, rev, headings, chunks, stats, reload, reloadIfChanged, smdDoc, richHtml, pages, sheets, sheetIdx, setSheetIdx };
 }
 
 const ChunkView = React.memo(function ChunkView({ text, mdStyle, rules }: { text: string; mdStyle: any; rules: any }) {
   return <Markdown rules={rules} style={mdStyle}>{text}</Markdown>;
 });
+
+// Постраничный текст (pptx/odt/epub от Ares): одна страница + навигация.
+function PagesView({ pages, mdStyle, rules, rt }: { pages: string[]; mdStyle: any; rules: any; rt: any }) {
+  const [idx, setIdx] = useState(0);
+  const total = Math.max(1, pages.length);
+  const i = Math.min(idx, total - 1);
+  const btn = (disabled: boolean) => ({ opacity: disabled ? 0.3 : 1, padding: 10 });
+  return (
+    <View style={{ flex: 1 }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
+        <Markdown rules={rules} style={mdStyle}>{pages[i] ?? ''}</Markdown>
+      </ScrollView>
+      {total > 1 && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 6, borderTopWidth: 1, borderTopColor: rt.text + '15', backgroundColor: rt.bg }}>
+          <Pressable onPress={() => setIdx(Math.max(0, i - 1))} disabled={i === 0} style={btn(i === 0)}>
+            <Ionicons name="chevron-back" size={24} color={rt.text} />
+          </Pressable>
+          <Text style={{ color: rt.text + '80', fontSize: 13 }}>Стр. {i + 1} / {total}</Text>
+          <Pressable onPress={() => setIdx(Math.min(total - 1, i + 1))} disabled={i === total - 1} style={btn(i === total - 1)}>
+            <Ionicons name="chevron-forward" size={24} color={rt.text} />
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
 
 const MAX_DOCS = 6;
 
@@ -643,7 +715,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
 
   const renderPane = (
     doc: Doc,
-    dd: { chunks: Chunk[]; kind: DocKind; rev: number },
+    dd: ReturnType<typeof useDoc>,
     isSplit: boolean,
     onCloseSplit?: () => void,
     onSwap?: () => void,
@@ -670,6 +742,16 @@ export default function ReaderScreen({ route, navigation }: Props) {
         <View style={{ flex: 1 }}>
           <PdfView uri={doc.uri} />
         </View>
+      ) : dd.kind === 'rich' ? (
+        <View style={{ flex: 1 }}>
+          <WebView
+            originWhitelist={['*']}
+            source={{ html: dd.richHtml }}
+            style={{ flex: 1, backgroundColor: rt.bg }}
+          />
+        </View>
+      ) : dd.kind === 'pages' ? (
+        <PagesView key={doc.uri} pages={dd.pages} mdStyle={mdStyle} rules={rules} rt={rt} />
       ) : (
       <View
         style={{ flex: 1 }}
@@ -677,9 +759,30 @@ export default function ReaderScreen({ route, navigation }: Props) {
         onTouchStart={(e) => { touchY.current = e.nativeEvent.pageY; }}
         onTouchEnd={(e) => {
           // Тап без скролла — вкл/выкл иммерсив. Свайпы не трогаем.
-          if (Math.abs(e.nativeEvent.pageY - touchY.current) < 10) setShowUI((v) => !v);
+          // В .smd тапы заняты интерактивом блоков — иммерсив не трогаем.
+          if (dd.kind !== 'smd' && Math.abs(e.nativeEvent.pageY - touchY.current) < 10) setShowUI((v) => !v);
         }}
       >
+        {dd.kind === 'sheet' && dd.sheets.length > 1 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ borderBottomWidth: 1, borderBottomColor: rt.text + '15', maxHeight: 48 }}>
+            <View style={{ flexDirection: 'row', gap: 4, padding: 8 }}>
+              {dd.sheets.map((sh, i) => (
+                <Pressable
+                  key={i}
+                  onPress={() => {
+                    dd.setSheetIdx(i);
+                    try { listRefs.current[doc.uri]?.scrollToOffset({ offset: 0, animated: false }); } catch {}
+                  }}
+                  style={{ borderRadius: 99, paddingHorizontal: 14, paddingVertical: 6, backgroundColor: i === dd.sheetIdx ? theme.accentSoft : 'transparent' }}
+                >
+                  <Text style={{ color: i === dd.sheetIdx ? theme.accent : rt.text + '80', fontSize: 13, fontWeight: '600' }}>
+                    {sh.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
+        )}
         <FlatList
           ref={(r) => { listRefs.current[doc.uri] = r; }}
           key={remountKey + '|' + doc.uri}
@@ -687,7 +790,13 @@ export default function ReaderScreen({ route, navigation }: Props) {
           keyExtractor={(_, i) => String(i)}
           style={s.scroll}
           contentContainerStyle={[s.content, { maxWidth: contentWidth, alignSelf: 'center', width: '100%' }]}
-          renderItem={({ item }) => <ChunkView text={item.text} mdStyle={mdStyle} rules={rules} />}
+          renderItem={({ item, index }) => {
+            if (dd.kind === 'smd') {
+              if (index > 0 || !dd.smdDoc) return null;
+              return <SmdDocView doc={dd.smdDoc} mdStyle={mdStyle} rt={rt} fontSize={fontSize} />;
+            }
+            return <ChunkView text={item.text} mdStyle={mdStyle} rules={rules} />;
+          }}
           onScroll={makeOnScroll(doc.uri, !isSplit)}
           onContentSizeChange={makeContentSize(doc.uri, dd.chunks.length, dd.rev)}
           scrollEventThrottle={16}
