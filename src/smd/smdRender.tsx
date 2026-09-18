@@ -68,7 +68,7 @@ function BlockView({ block, ctx }: { block: SmdBlock; ctx: Ctx }) {
     case 'formula':
       return (
         <View style={[s.formula, { backgroundColor: ctx.rt.text + '0A', borderColor: ctx.rt.text + '20' }]}>
-          <Text style={[s.formulaText, { color: ctx.rt.text }]} selectable>{`$$ ${block.body} $$`}</Text>
+          <Text style={[s.formulaText, { color: ctx.rt.text }]} selectable>{block.body}</Text>
         </View>
       );
     case 'spoiler':
@@ -79,6 +79,8 @@ function BlockView({ block, ctx }: { block: SmdBlock; ctx: Ctx }) {
       return <CardBlock front={block.front} back={block.back} ctx={ctx} />;
     case 'quiz':
       return <QuizBlock block={block} ctx={ctx} />;
+    case 'cloze':
+      return <ClozeBlock body={block.body} ctx={ctx} />;
     case 'callout':
       return <CalloutBlock kind={block.kind} body={block.body} ctx={ctx} />;
     case 'checklist':
@@ -157,12 +159,59 @@ function CardBlock({ front, back, ctx }: { front: string; back: string; ctx: Ctx
   );
 }
 
-// --- quiz: single/multi — кнопки, free — TextInput ---
+// --- cloze: скрываемые гэпы, тап открывает ---
+
+function ClozeBlock({ body, ctx }: { body: string; ctx: Ctx }) {
+  const parts = splitCloze(body);
+  const [open, setOpen] = useState<number[]>([]);
+  return (
+    <View style={[s.callout, { borderColor: '#8B5CF6', backgroundColor: '#8B5CF614' }]}>
+      <View style={s.cardHead}>
+        <Ionicons name="eye-off-outline" size={16} color="#8B5CF6" />
+        <Text style={[s.calloutLabel, { color: '#8B5CF6' }]}>Пропуск · тап — открыть</Text>
+      </View>
+      <Text style={[s.clozeText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>
+        {parts.map((p, i) => p.hidden ? (
+          <Text
+            key={i}
+            onPress={() => setOpen((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]))}
+            style={open.includes(i)
+              ? { color: '#22C55E', fontWeight: '700' }
+              : { backgroundColor: ctx.rt.text + '25', color: 'transparent' }}
+          >
+            {open.includes(i) ? p.text : `  ${p.text.replace(/./g, '·')}  `}
+          </Text>
+        ) : (
+          <Text key={i}>{p.text}</Text>
+        ))}
+      </Text>
+    </View>
+  );
+}
+
+function splitCloze(body: string): { text: string; hidden: boolean }[] {
+  const out: { text: string; hidden: boolean }[] = [];
+  const re = /\{\{c\d+::([^}:]+)(?:::[^}]*)?\}\}|==([^=\n]+)==/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    if (m.index > last) out.push({ text: body.slice(last, m.index), hidden: false });
+    out.push({ text: (m[1] ?? m[2] ?? '').trim() || '…', hidden: true });
+    last = m.index + m[0].length;
+  }
+  if (last < body.length) out.push({ text: body.slice(last), hidden: false });
+  return out.length > 0 ? out : [{ text: body, hidden: false }];
+}
+
+// --- quiz: single/multi — кнопки, free/numeric — ввод, match — пары, order — порядок ---
 
 function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>; ctx: Ctx }) {
   const [sel, setSel] = useState<number[]>([]);
   const [free, setFree] = useState('');
   const [checked, setChecked] = useState(false);
+  const [matchSel, setMatchSel] = useState<{ l?: number; r?: number }>({});
+  const [matchPairs, setMatchPairs] = useState<Record<number, number>>({});
+  const [order, setOrder] = useState<number[] | null>(null);
 
   const opts = block.options ?? [];
   const toggle = (i: number) => {
@@ -180,7 +229,37 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
   };
   const multiOk = [...sel].sort().join(',') === [...correctIdx].sort().join(',');
 
-  const freeOk = checked && free.trim().toLowerCase() === (block.answer ?? '').trim().toLowerCase();
+  const normStr = (v: string) => v.trim().toLowerCase();
+  const freeOk = checked && (
+    normStr(free) === normStr(block.answer ?? '') ||
+    (block.accept ?? []).some((a) => normStr(free) === normStr(a))
+  );
+  const numOk = (() => {
+    if (block.quizType !== 'numeric' || !checked) return false;
+    const v = parseFloat(free.replace(',', '.'));
+    const a = parseFloat((block.answer ?? '').replace(',', '.'));
+    if (Number.isNaN(v) || Number.isNaN(a)) return false;
+    return Math.abs(v - a) <= (block.tolerance ?? 0);
+  })();
+  // match / order
+  const pairs = block.pairs ?? [];
+  const matchRights = pairs.map((p) => p.right);
+  const matchOk = checked && pairs.length >= 2 &&
+    pairs.every((p, li) => matchRights[matchPairs[li]] === p.right);
+  const orderItems = block.items ?? [];
+  const curOrder = order ?? orderItems.map((_, i) => i);
+  const orderOk = checked && orderItems.length >= 2 &&
+    curOrder.every((v, pos) => v === pos);
+  const moveOrder = (idx: number, dir: -1 | 1) => {
+    setChecked(false);
+    setOrder((prev) => {
+      const arr = [...(prev ?? orderItems.map((_, i) => i))];
+      const j = idx + dir;
+      if (j < 0 || j >= arr.length) return arr;
+      [arr[idx], arr[j]] = [arr[j], arr[idx]];
+      return arr;
+    });
+  };
 
   return (
     <View style={[s.quiz, { borderColor: ctx.rt.text + '25', backgroundColor: ctx.rt.text + '05' }]}>
@@ -229,7 +308,85 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
         />
       )}
 
-      {(block.quizType === 'multi' || block.quizType === 'free') && !checked && (
+      {block.quizType === 'numeric' && (
+        <TextInput
+          style={[s.freeInput, { borderColor: ctx.rt.text + '30', color: ctx.rt.text, fontSize: ctx.fontSize }]}
+          placeholder={block.unit ? `Число (в ${block.unit})…` : 'Число…'}
+          placeholderTextColor={ctx.rt.text + '50'}
+          value={free}
+          onChangeText={(t) => { setFree(t); setChecked(false); }}
+          keyboardType="numeric"
+          autoCapitalize="none"
+        />
+      )}
+
+      {block.quizType === 'match' && pairs.length >= 2 && (
+        <View style={s.matchWrap}>
+          {pairs.map((p, li) => {
+            const selR = matchPairs[li];
+            return (
+              <View key={li} style={s.matchRow}>
+                <Pressable
+                  onPress={() => {
+                    setChecked(false);
+                    setMatchSel((prev) => ({ ...prev, l: li }));
+                    if (matchSel.r !== undefined) {
+                      setMatchPairs((prev) => ({ ...prev, [li]: matchSel.r as number }));
+                      setMatchSel({});
+                    }
+                  }}
+                  style={[s.matchCell, { borderColor: matchSel.l === li ? '#3B82F6' : ctx.rt.text + '25' },
+                    matchSel.l === li && { backgroundColor: '#3B82F622' }]}
+                >
+                  <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>{p.left}</Text>
+                </Pressable>
+                <Text style={{ color: ctx.rt.text + '50' }}>→</Text>
+                <Pressable
+                  onPress={() => {
+                    setChecked(false);
+                    const r = matchRights.indexOf(p.right);
+                    setMatchSel((prev) => ({ ...prev, r }));
+                    if (matchSel.l !== undefined) {
+                      setMatchPairs((prev) => ({ ...prev, [matchSel.l as number]: r }));
+                      setMatchSel({});
+                    } else {
+                      setMatchPairs((prev) => ({ ...prev, [li]: (selR ?? r) }));
+                    }
+                  }}
+                  style={[s.matchCell, { borderColor: ctx.rt.text + '25' }]}
+                >
+                  <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>
+                    {selR !== undefined ? matchRights[selR] : '— выбери —'}
+                  </Text>
+                </Pressable>
+              </View>
+            );
+          })}
+          <Text style={[s.explain, { color: ctx.rt.text + '60' }]}>Тапни левую, потом правую — собери пары</Text>
+        </View>
+      )}
+
+      {block.quizType === 'order' && orderItems.length >= 2 && (
+        <View style={s.matchWrap}>
+          {curOrder.map((itemIdx, pos) => (
+            <View key={pos} style={s.matchRow}>
+              <Text style={[s.orderNum, { color: ctx.rt.text + '80' }]}>{pos + 1}.</Text>
+              <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize, flex: 1 }]}>
+                {orderItems[itemIdx]}
+              </Text>
+              <Pressable onPress={() => moveOrder(pos, -1)} hitSlop={8} style={s.orderBtn}>
+                <Ionicons name="chevron-up" size={20} color={ctx.rt.text + '80'} />
+              </Pressable>
+              <Pressable onPress={() => moveOrder(pos, 1)} hitSlop={8} style={s.orderBtn}>
+                <Ionicons name="chevron-down" size={20} color={ctx.rt.text + '80'} />
+              </Pressable>
+            </View>
+          ))}
+          <Text style={[s.explain, { color: ctx.rt.text + '60' }]}>Стрелками выставь правильный порядок</Text>
+        </View>
+      )}
+
+      {(block.quizType === 'multi' || block.quizType === 'free' || block.quizType === 'numeric' || block.quizType === 'match' || block.quizType === 'order') && !checked && (
         <Pressable onPress={() => setChecked(true)} style={[s.checkBtn, { backgroundColor: '#3B82F6' }]}>
           <Text style={s.checkBtnText}>Проверить</Text>
         </Pressable>
@@ -245,6 +402,18 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
           {block.quizType === 'free' ? (
             <Text style={[s.verdictText, { color: freeOk ? '#22C55E' : '#EF4444' }]}>
               {freeOk ? '✓ Верно' : `✗ Правильно: ${block.answer ?? '—'}`}
+            </Text>
+          ) : block.quizType === 'numeric' ? (
+            <Text style={[s.verdictText, { color: numOk ? '#22C55E' : '#EF4444' }]}>
+              {numOk ? '✓ Верно' : `✗ Правильно: ${block.answer ?? '—'}${block.unit ? ` ${block.unit}` : ''}`}
+            </Text>
+          ) : block.quizType === 'match' ? (
+            <Text style={[s.verdictText, { color: matchOk ? '#22C55E' : '#EF4444' }]}>
+              {matchOk ? '✓ Все пары верны' : '✗ Есть неверные пары'}
+            </Text>
+          ) : block.quizType === 'order' ? (
+            <Text style={[s.verdictText, { color: orderOk ? '#22C55E' : '#EF4444' }]}>
+              {orderOk ? '✓ Порядок верный' : '✗ Порядок неверный'}
             </Text>
           ) : block.quizType === 'single' ? (
             <Text style={[s.verdictText, { color: opts[sel[0]]?.correct ? '#22C55E' : '#EF4444' }]}>
@@ -399,4 +568,10 @@ const s = StyleSheet.create({
   cmpRow: { flexDirection: 'row' },
   cmpCell: { minWidth: 110, maxWidth: 220, padding: 8, borderRightWidth: 1, borderBottomWidth: 0.5 },
   cmpHead: { fontWeight: '700' },
+  clozeText: { lineHeight: 24 },
+  matchWrap: { gap: 8, marginTop: 4 },
+  matchRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  matchCell: { flex: 1, borderWidth: 1, borderRadius: 10, padding: 10 },
+  orderNum: { fontSize: 14, fontWeight: '700', minWidth: 24 },
+  orderBtn: { padding: 6 },
 });

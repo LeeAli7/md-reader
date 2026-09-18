@@ -22,7 +22,8 @@ export type SmdBlock =
   | { type: 'spoiler'; title?: string; body: string }
   | { type: 'solution'; body: string }
   | { type: 'card'; front: string; back: string }
-  | { type: 'quiz'; quizType: 'single' | 'multi' | 'free'; question: string; options?: QuizOption[]; answer?: string; explain?: string; points?: number }
+  | { type: 'quiz'; quizType: 'single' | 'multi' | 'free' | 'numeric' | 'match' | 'order'; question: string; options?: QuizOption[]; answer?: string; accept?: string[]; tolerance?: number; unit?: string; pairs?: { left: string; right: string }[]; items?: string[]; explain?: string; points?: number }
+  | { type: 'cloze'; body: string }
   | { type: 'callout'; kind: 'mistake' | 'exam-tip' | 'intuition'; body: string }
   | { type: 'checklist'; items: string[] }
   | { type: 'compare-table'; head: string[]; rows: string[][] }
