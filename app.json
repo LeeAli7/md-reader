@@ -14,6 +14,126 @@
     "adaptiveIcon": {
       "foregroundImage": "./assets/adaptive-icon.png",
       "backgroundColor": "#0D1117"
-    }
+    },
+    "intentFilters": [
+      {
+        "action": "VIEW",
+        "category": [
+          "DEFAULT"
+        ],
+        "data": [
+          {
+            "scheme": "content",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.smd"
+          },
+          {
+            "scheme": "file",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.smd"
+          },
+          {
+            "scheme": "content",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.md"
+          },
+          {
+            "scheme": "file",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.md"
+          },
+          {
+            "scheme": "content",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.txt"
+          },
+          {
+            "scheme": "file",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.txt"
+          },
+          {
+            "scheme": "content",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.csv"
+          },
+          {
+            "scheme": "file",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.csv"
+          },
+          {
+            "scheme": "content",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.pdf"
+          },
+          {
+            "scheme": "file",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.pdf"
+          },
+          {
+            "scheme": "content",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.docx"
+          },
+          {
+            "scheme": "file",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.docx"
+          },
+          {
+            "scheme": "content",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.xlsx"
+          },
+          {
+            "scheme": "file",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.xlsx"
+          },
+          {
+            "scheme": "content",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.pptx"
+          },
+          {
+            "scheme": "file",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.pptx"
+          },
+          {
+            "scheme": "content",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.odt"
+          },
+          {
+            "scheme": "file",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.odt"
+          },
+          {
+            "scheme": "content",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.rtf"
+          },
+          {
+            "scheme": "file",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.rtf"
+          },
+          {
+            "scheme": "content",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.epub"
+          },
+          {
+            "scheme": "file",
+            "mimeType": "*/*",
+            "pathPattern": ".*\\.epub"
+          }
+        ]
+      }
+    ]
   }
 }

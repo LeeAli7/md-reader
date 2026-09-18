@@ -8,6 +8,7 @@ import { exportFile } from '../utils/importExport';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
+import { WebView } from 'react-native-webview';
 import * as FileSystem from 'expo-file-system';
 import { getRecent, pushRecent, getPosition, setPosition, type RecentEntry } from '../utils/metaStore';
 import { getFolderTree, type FolderNode } from '../utils/folderTree';
@@ -95,7 +96,7 @@ function sheetsToMarkdown(sheets: { name: string; rows: string[][] }[]): string 
   }).join('\n\n');
 }
 
-type DocKind = 'text' | 'sheet' | 'image' | 'pdf' | 'binary';
+type DocKind = 'text' | 'sheet' | 'image' | 'pdf' | 'rich' | 'pages' | 'binary';
 
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'];
 
@@ -133,6 +134,12 @@ function useDoc(uri: string) {
         if (!alive) return;
         if (loaded.kind === 'text') { setKind('text'); setContent(loaded.text ?? ''); }
         else if (loaded.kind === 'sheet') { setKind('sheet'); setContent(sheetsToMarkdown(loaded.sheets ?? [])); }
+        else if (loaded.kind === 'rich') { setKind('rich'); setContent(loaded.html ?? ''); }
+        else if (loaded.kind === 'pages') {
+          setKind('pages');
+          const head = loaded.note ? `*${loaded.note}*\n\n` : '';
+          setContent(head + (loaded.pages ?? []).join('\n\n---\n\n'));
+        }
         else { setKind('binary'); setContent(`# Не предпросмотр\n\n${loaded.note ?? 'Этот формат открывается через «Поделиться».'}`); }
         setRev((r) => r + 1);
       } catch {
@@ -643,7 +650,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
 
   const renderPane = (
     doc: Doc,
-    dd: { chunks: Chunk[]; kind: DocKind; rev: number },
+    dd: { chunks: Chunk[]; kind: DocKind; rev: number; content: string },
     isSplit: boolean,
     onCloseSplit?: () => void,
     onSwap?: () => void,
@@ -669,6 +676,15 @@ export default function ReaderScreen({ route, navigation }: Props) {
       ) : dd.kind === 'pdf' ? (
         <View style={{ flex: 1 }}>
           <PdfView uri={doc.uri} />
+        </View>
+      ) : dd.kind === 'rich' ? (
+        <View style={{ flex: 1 }}>
+          <WebView
+            originWhitelist={['*']}
+            source={{ html: dd.content }}
+            style={{ flex: 1 }}
+            javaScriptEnabled={false}
+          />
         </View>
       ) : (
       <View

@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, type NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider } from './src/hooks/useTheme';
@@ -9,12 +9,23 @@ import FileBrowserScreen from './src/screens/FileBrowserScreen';
 import ReaderScreen from './src/screens/ReaderScreen';
 import EditorScreen from './src/screens/EditorScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import { initIncomingFileListener } from './src/utils/incomingFile';
 import * as Font from 'expo-font';
 
 const Stack = createNativeStackNavigator();
 
 export default function App() {
   const [fontsLoaded, setFontsLoaded] = useState(false);
+  const navRef = useRef<NavigationContainerRef<any>>(null);
+
+  useEffect(() => {
+    // Входящий файл из intent VIEW («Открыть через…»): копия уже в Inbox —
+    // открываем её в Reader поверх текущего стека.
+    return initIncomingFileListener((uri) => {
+      const title = uri.split('/').pop() ?? 'Файл';
+      navRef.current?.navigate('Reader', { uri, title });
+    });
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -62,7 +73,7 @@ export default function App() {
     <SafeAreaProvider>
       <AppSettingsProvider>
       <ThemeProvider>
-        <NavigationContainer>
+        <NavigationContainer ref={navRef}>
           <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
             <Stack.Screen name="Files" component={FileBrowserScreen} />
             <Stack.Screen name="Reader" component={ReaderScreen} />

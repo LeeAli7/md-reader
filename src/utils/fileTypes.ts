@@ -12,7 +12,7 @@ export type FileKind =
   | 'image'
   | 'other';
 
-export const MARKDOWN_EXTS = ['md', 'markdown', 'mdown', 'mkd'] as const;
+export const MARKDOWN_EXTS = ['md', 'markdown', 'mdown', 'mkd', 'smd'] as const;
 export const TEXT_EXTS = ['txt', 'text', 'log', 'caption', 'srt', 'tex'] as const;
 export const CODE_EXTS = [
   'ts', 'tsx', 'js', 'jsx', 'py', 'java', 'kt', 'c', 'h', 'cpp', 'hpp',
@@ -20,7 +20,8 @@ export const CODE_EXTS = [
   'toml', 'xml', 'html', 'css', 'scss', 'sql', 'r', 'lua', 'pl', 'vue', 'svelte',
 ] as const;
 export const DATA_EXTS = ['csv', 'tsv'] as const;
-export const DOC_EXTS = ['doc', 'docx', 'odt', 'rtf', 'epub'] as const;
+export const SHEET_EXTS = ['xlsx', 'xls'] as const;
+export const DOC_EXTS = ['doc', 'docx', 'odt', 'rtf', 'epub', 'pptx'] as const;
 
 const CODE_SET = new Set<string>(CODE_EXTS as unknown as string[]);
 const TEXT_SET = new Set<string>(TEXT_EXTS as unknown as string[]);
@@ -42,6 +43,7 @@ export function getFileKind(name: string, isDir = false): FileKind {
   if (TEXT_SET.has(ext)) return 'text';
   if (CODE_SET.has(ext)) return 'code';
   if ((DATA_EXTS as readonly string[]).includes(ext)) return 'data';
+  if ((SHEET_EXTS as readonly string[]).includes(ext)) return 'data';
   if ((DOC_EXTS as readonly string[]).includes(ext)) return 'doc';
   if (ext === 'pdf') return 'pdf';
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) return 'image';
