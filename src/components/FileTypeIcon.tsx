@@ -7,6 +7,7 @@ const MAP: Record<string, string> = {
   md: 'document-text',
   markdown: 'document-text',
   mdown: 'document-text',
+  smd: 'school',
   txt: 'document-text-outline',
   text: 'document-text-outline',
   json: 'code-slash-outline',
