@@ -1,4 +1,4 @@
-// MD Reader — Design Tokens
+// Supreader — Design Tokens
 export const light = {
   bg: '#FAFAF8',
   surface: '#FFFFFF',

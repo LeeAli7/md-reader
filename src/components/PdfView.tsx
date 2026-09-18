@@ -1,4 +1,4 @@
-// MD Vault Pro — engine: offline PDF viewer (WebView + inlined pdf.js).
+// Supreader — engine: offline PDF viewer (WebView + inlined pdf.js).
 // Contract: PdfView({uri}) reads the file itself and renders pages with scroll.
 // No network at runtime — viewer HTML (pdf.js 3.11.174) is baked into pdfViewerHtml.ts.
 

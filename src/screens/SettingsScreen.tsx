@@ -144,7 +144,7 @@ export default function SettingsScreen({ navigation }: any) {
 
       <View style={s.about}>
         <Text style={s.sectionTitle}>О приложении</Text>
-        <Text style={[s.aboutText, { color: theme.text }]}>MD Vault Pro · v2</Text>
+        <Text style={[s.aboutText, { color: theme.text }]}>Supreader · v2</Text>
         <Text style={[s.aboutSub, { color: theme.textSecondary }]}>Читалка и хранитель текстовых знаний</Text>
       </View>
     </ScrollView>

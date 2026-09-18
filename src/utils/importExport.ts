@@ -1,4 +1,4 @@
-// MD Vault Pro — engine: import / export / Inbox
+// Supreader — engine: import / export / Inbox
 // Uses only v1 deps (expo-document-picker, expo-file-system, react-native Share).
 // expo-sharing is optional: if Marcel adds it later we prefer it, else fallback.
 

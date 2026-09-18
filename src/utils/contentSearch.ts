@@ -1,4 +1,4 @@
-// MD Vault Pro — engine: content search (search inside files, not just names)
+// Supreader — engine: content search (search inside files, not just names)
 // Deps: expo-file-system (already in v1) + ./fileTypes for binary skipping.
 
 import * as FileSystem from 'expo-file-system';

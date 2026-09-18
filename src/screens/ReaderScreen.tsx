@@ -16,6 +16,7 @@ import { loadReadable } from '../utils/documentLoader';
 import PdfView from '../components/PdfView';
 import { SmdDocView } from '../smd/smdRender';
 import { mockSmdDoc, mockRichDoc, mockPages } from '../smd/smdMock';
+import { parseSmd } from '../smd/smdParser';
 import type { SmdDoc, SheetDoc } from '../smd/smdTypes';
 import { useTheme } from '../hooks/useTheme';
 import { readingThemes } from '../theme/tokens';
@@ -145,7 +146,7 @@ function useDoc(uri: string) {
           if (!alive) return;
           setKind('smd');
           setContent(raw);
-          setSmdDoc(mockSmdDoc(uri, raw));
+          try { setSmdDoc(parseSmd(raw, uri)); } catch { setSmdDoc(mockSmdDoc(uri, raw)); }
           setRev((r) => r + 1);
           return;
         }
@@ -153,16 +154,18 @@ function useDoc(uri: string) {
         const loaded: any = await loadReadable(uri, ext);
         if (!alive) return;
         // rich (docx с картинками: html+images) и pages (pptx/odt/epub) —
-        // ветки лица под движок Ares: сейчас движок их не отдаёт, фолбэк — моки.
+        // данные от движка, фолбэк — моки лица.
         if (loaded.kind === 'rich') {
           setKind('rich');
           setRichHtml(loaded.html ?? mockRichDoc(uri.split('/').pop() ?? '').html);
           setContent('');
         } else if (loaded.kind === 'pages') {
-          const pg: string[] = loaded.pages ?? mockPages(loaded.text ?? '').pages;
+          const hasReal = Array.isArray((loaded as any).pages) && (loaded as any).pages.length > 0;
+          const pg: string[] = hasReal ? (loaded as any).pages : mockPages(loaded.text ?? '').pages;
           setKind('pages');
           setPages(pg);
-          setContent(pg.join('\n\n'));
+          const head = (loaded as any).note ? `*${(loaded as any).note}*\n\n` : '';
+          setContent(hasReal ? head + pg.join('\n\n---\n\n') : pg.join('\n\n'));
         } else if (loaded.kind === 'text') { setKind('text'); setContent(loaded.text ?? ''); }
         else if (loaded.kind === 'sheet') {
           setKind('sheet');

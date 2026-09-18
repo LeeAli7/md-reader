@@ -1,4 +1,4 @@
-// MD Vault Pro — engine: favorites / recent / tags on AsyncStorage
+// Supreader — engine: favorites / recent / tags on AsyncStorage
 // Keys are namespaced (md2_) so v1 reading-settings keys stay untouched.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';

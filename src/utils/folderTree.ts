@@ -1,4 +1,4 @@
-// MD Vault Pro — engine: folder tree for the move-modal.
+// Supreader — engine: folder tree for the move-modal.
 // Returns the whole directory skeleton under the vault root so the UI
 // can render a one-shot picker (tree + breadcrumbs) instead of
 // step-by-step navigation. Files are excluded — folders only.

@@ -1,4 +1,4 @@
-// MD Vault Pro — engine: EditorScreen (Edit / Preview / Split + autosave)
+// Supreader — engine: EditorScreen (Edit / Preview / Split + autosave)
 // New dir screen; navigation wiring stays with Marcel (App.tsx integration).
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
