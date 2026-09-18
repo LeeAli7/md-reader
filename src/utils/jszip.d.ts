@@ -13,6 +13,9 @@ declare module 'jszip' {
     files: Record<string, JSZipObject>;
     file(path: string | RegExp): JSZipObject | null;
     file(path: string): JSZipObject | null;
+    file(path: string, data: string | Uint8Array, options?: { base64?: boolean }): void;
+    generateAsync(options: { type: 'base64'; compression?: 'STORE' | 'DEFLATE' }): Promise<string>;
+    generateAsync(options: { type: 'uint8array'; compression?: 'STORE' | 'DEFLATE' }): Promise<Uint8Array>;
   }
   export default JSZip;
 }

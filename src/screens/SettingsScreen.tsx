@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet, ScrollView, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import { readingThemes } from '../theme/tokens';
 import { fonts } from '../theme/fonts';
 import { useAppSettingsOpt } from '../context/AppSettingsContext';
 import type { ThemeMode } from '../context/AppSettingsContext';
+import { exportVaultBackup } from '../utils/backup';
 
 const MODES: { key: ThemeMode; label: string; icon: string }[] = [
   { key: 'light', label: 'Светлая', icon: 'sunny-outline' },
@@ -27,6 +28,20 @@ export default function SettingsScreen({ navigation }: any) {
   const selectedTheme = app?.readingTheme ?? 'default';
 
   const step = (fn: () => void) => fn;
+  const [backingUp, setBackingUp] = useState(false);
+
+  const onBackup = async () => {
+    if (backingUp) return;
+    setBackingUp(true);
+    try {
+      const { files } = await exportVaultBackup();
+      Alert.alert('Резервная копия готова', `Упаковано файлов: ${files}. Выберите, куда сохранить.`);
+    } catch (e) {
+      Alert.alert('Не удалось создать копию', String((e as Error)?.message ?? e));
+    } finally {
+      setBackingUp(false);
+    }
+  };
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
@@ -130,6 +145,19 @@ export default function SettingsScreen({ navigation }: any) {
         </Pressable>
       </View>
 
+      {/* Резервная копия */}
+      <Pressable
+        onPress={onBackup}
+        disabled={backingUp}
+        style={[s.backupBtn, { borderColor: theme.accent, opacity: backingUp ? 0.6 : 1 }]}
+      >
+        <Ionicons name="archive-outline" size={18} color={theme.accent} />
+        <Text style={[s.backupText, { color: theme.accent }]}>
+          {backingUp ? 'Упаковываю…' : 'Резервная копия'}
+        </Text>
+      </Pressable>
+      <Text style={s.hint}>Вся папка хранилища — в один zip через диалог «Поделиться»</Text>
+
       {/* Сброс */}
       <Pressable
         onPress={() => Alert.alert('Сбросить настройки?', 'Вернуть все значения по умолчанию', [
@@ -175,6 +203,8 @@ function styles(theme: any, insets: any) {
     preview: { flex: 1, textAlign: 'center' },
     resetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderRadius: 14, paddingVertical: 14, marginTop: 28 },
     resetText: { fontSize: 15, color: '#EF4444', fontWeight: '500' },
+    backupBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderRadius: 14, paddingVertical: 14, marginTop: 28 },
+    backupText: { fontSize: 15, fontWeight: '600' },
     about: { marginTop: 32 },
     aboutText: { fontSize: 15 },
     aboutSub: { fontSize: 13, marginTop: 4 },
