@@ -3,154 +3,236 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Тест-решалка на Jev — макеты UI (390x844)</title>
+<title>Тест-решалка на Jev — премиум UI v2 (390x844)</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Inter, -apple-system, 'Segoe UI', Roboto, sans-serif; background: #0D1117; color: #E6E6E6; padding: 32px 24px 64px; }
+  body { font-family: Inter, -apple-system, 'Segoe UI', Roboto, sans-serif; background: #070A10; color: #E8EDF4; padding: 32px 24px 64px; }
   h1 { font-size: 22px; margin-bottom: 6px; }
-  .sub { color: #8A8A8A; font-size: 14px; margin-bottom: 24px; max-width: 900px; line-height: 1.5; }
-  .sub b { color: #C9D1D9; }
-  .flow { color: #8A8A8A; font-size: 13px; margin-bottom: 28px; }
+  .sub { color: #8A94A6; font-size: 14px; margin-bottom: 8px; max-width: 960px; line-height: 1.55; }
+  .sub b { color: #D5DCE8; }
+  .flow { color: #8A94A6; font-size: 13px; margin-bottom: 28px; }
   .grid { display: flex; flex-wrap: wrap; gap: 28px; }
-  .phone { width: 390px; height: 844px; background: #FAFAF8; color: #1A1A1A; border-radius: 44px; overflow: hidden; position: relative; display: flex; flex-direction: column; border: 10px solid #1A1A1A; flex-shrink: 0; }
-  .notch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 120px; height: 28px; background: #1A1A1A; border-radius: 16px; z-index: 5; }
-  .screen { padding: 56px 20px 20px; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-  .caption { font-size: 13px; color: #8A8A8A; margin-bottom: 10px; }
-  .caption b { color: #E6E6E6; }
-  .apptitle { font-size: 22px; font-weight: 800; }
-  .apptitle span { color: #2563EB; }
-  .hint { font-size: 13px; color: #6B6B6B; line-height: 1.45; }
-  .card { background: #fff; border: 1px solid #E5E5E0; border-radius: 16px; padding: 14px; margin-top: 12px; }
-  .btn { display: block; text-align: center; border-radius: 14px; padding: 15px; font-weight: 700; font-size: 16px; margin-top: 12px; }
-  .btn-primary { background: #2563EB; color: #fff; }
-  .btn-ghost { background: #EFF3FF; color: #2563EB; }
-  .btn-dark { background: #1A1A1A; color: #fff; }
-  .row { display: flex; gap: 10px; }
-  .row > * { flex: 1; }
-  .pill { display: inline-block; font-size: 12px; font-weight: 700; background: #EFF3FF; color: #2563EB; border-radius: 99px; padding: 5px 10px; }
-  .pill.green { background: #E7F7ED; color: #15803D; }
-  .pill.amber { background: #FEF3C7; color: #B45309; }
-  .opt { border: 1.5px solid #E5E5E0; border-radius: 12px; padding: 12px; margin-top: 8px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
-  .opt.win { border-color: #16A34A; background: #F0FDF4; }
-  .opt .conf { font-size: 12px; font-weight: 800; color: #15803D; }
-  .opt .low { font-size: 12px; color: #9A9A9A; font-weight: 700; }
-  .q { font-size: 15px; font-weight: 700; line-height: 1.4; }
-  .timer { font-size: 12px; color: #6B6B6B; }
-  .timer b { color: #16A34A; font-size: 15px; }
-  .textarea { background: #fff; border: 1.5px solid #E5E5E0; border-radius: 14px; padding: 12px; font-size: 14px; color: #1A1A1A; margin-top: 12px; min-height: 118px; line-height: 1.5; }
-  .counter { margin-top: auto; background: #1A1A1A; color: #fff; border-radius: 14px; padding: 12px 14px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
-  .counter b { color: #7DD3FC; }
-  .viewfinder { background: #111; border-radius: 16px; height: 380px; margin-top: 12px; position: relative; overflow: hidden;
-    background-image: linear-gradient(#333 1px, transparent 1px), linear-gradient(90deg, #333 1px, transparent 1px);
-    background-size: 100% 28px, 28px 100%; }
-  .scan { position: absolute; left: 24px; right: 24px; top: 120px; border: 2px solid #60A5FA; border-radius: 12px; height: 130px; }
-  .scan small { position: absolute; bottom: -24px; left: 0; right: 0; text-align: center; color: #60A5FA; font-size: 12px; font-weight: 700; }
-  .shutter { width: 72px; height: 72px; border-radius: 50%; background: #fff; border: 6px solid #2563EB; margin: 22px auto 0; }
-  .bar { height: 8px; background: #EDEDE8; border-radius: 99px; overflow: hidden; margin-top: 10px; }
-  .bar i { display: block; height: 100%; background: #2563EB; border-radius: 99px; }
-  .price { border: 2px solid #E5E5E0; border-radius: 16px; padding: 14px; margin-top: 10px; }
-  .price.hot { border-color: #2563EB; background: #EFF3FF; }
-  .price h3 { font-size: 16px; }
-  .price p { font-size: 13px; color: #6B6B6B; margin-top: 4px; line-height: 1.45; }
-  .price .sum { font-size: 24px; font-weight: 800; margin-top: 6px; }
-  .price .sum small { font-size: 13px; color: #6B6B6B; font-weight: 400; }
-  .foot { font-size: 11px; color: #9A9A9A; text-align: center; margin-top: 10px; line-height: 1.5; }
-  .expl { font-size: 13.5px; line-height: 1.55; color: #333; }
-  .tag { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #6B6B6B; margin-top: 14px; }
+  .phone { width: 390px; height: 844px; background: #0B0F17; color: #F2F5F9; border-radius: 44px; overflow: hidden; position: relative; display: flex; flex-direction: column; border: 10px solid #000; flex-shrink: 0; box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+  .notch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 120px; height: 28px; background: #000; border-radius: 16px; z-index: 5; }
+  .screen { padding: 56px 18px 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .caption { font-size: 13px; color: #8A94A6; margin-bottom: 10px; max-width: 390px; line-height: 1.5; }
+  .caption b { color: #E8EDF4; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
+  .logo em { font-style: normal; background: linear-gradient(90deg,#4F7CFF,#7C5CFF); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .pro-badge { font-size: 11px; font-weight: 800; letter-spacing: .08em; color: #0B0F17; background: linear-gradient(90deg,#F5D67B,#E8B84B); border-radius: 99px; padding: 5px 10px; }
+  .iconbtn { width: 38px; height: 38px; border-radius: 12px; background: #131A26; border: 1px solid #232D40; display: flex; align-items: center; justify-content: center; color: #B9C3D4; }
+  .ic { width: 20px; height: 20px; }
+  .ic.sm { width: 16px; height: 16px; }
+  .stats { display: flex; gap: 8px; margin-top: 14px; }
+  .stat { flex: 1; background: #131A26; border: 1px solid #232D40; border-radius: 14px; padding: 10px 12px; }
+  .stat b { font-size: 17px; display: block; }
+  .stat span { font-size: 11px; color: #8A94A6; }
+  .hero { margin-top: 12px; border-radius: 20px; padding: 18px; background: linear-gradient(135deg,#2B4BD8,#6D3DF5); position: relative; overflow: hidden; }
+  .hero:after { content: ""; position: absolute; right: -40px; top: -40px; width: 160px; height: 160px; border-radius: 50%; background: rgba(255,255,255,.12); }
+  .hero h2 { font-size: 19px; font-weight: 800; }
+  .hero p { font-size: 13px; opacity: .85; margin-top: 4px; }
+  .hero .go { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; background: #fff; color: #1A1A1A; font-weight: 800; font-size: 15px; border-radius: 12px; padding: 12px 18px; }
+  .rowline { display: flex; align-items: center; gap: 12px; background: #131A26; border: 1px solid #232D40; border-radius: 14px; padding: 13px 14px; margin-top: 8px; font-size: 14px; font-weight: 600; }
+  .rowline small { display: block; font-weight: 400; color: #8A94A6; font-size: 12px; margin-top: 2px; }
+  .rowline .chev { margin-left: auto; color: #5B6678; }
+  .sect { font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: #5B6678; margin: 16px 2px 2px; }
+  .hist { display: flex; align-items: center; gap: 10px; padding: 11px 2px; border-bottom: 1px solid #161D2A; font-size: 13.5px; }
+  .hist .dot { width: 8px; height: 8px; border-radius: 50%; background: #34D399; flex-shrink: 0; }
+  .hist .dot.mid { background: #FBBF24; }
+  .hist small { color: #8A94A6; margin-left: auto; font-weight: 700; flex-shrink: 0; }
+  .tabbar { margin: auto -18px 0; display: flex; border-top: 1px solid #161D2A; background: #0D121C; padding: 10px 8px 26px; }
+  .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; color: #5B6678; font-weight: 600; }
+  .tab.on { color: #fff; }
+  .sticky { margin: auto -18px 0; padding: 12px 18px 26px; background: linear-gradient(transparent, #0B0F17 30%); }
+  .cta { display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 16px; padding: 16px; font-weight: 800; font-size: 16px; background: linear-gradient(90deg,#4F7CFF,#7C5CFF); color: #fff; }
+  .cta small { font-weight: 400; opacity: .8; font-size: 13px; }
+  .ghost { display: block; text-align: center; font-size: 14px; font-weight: 600; color: #9AA6B8; margin-top: 12px; }
+  .seg { display: flex; background: #131A26; border: 1px solid #232D40; border-radius: 14px; padding: 4px; margin-top: 12px; }
+  .seg div { flex: 1; text-align: center; font-size: 13px; font-weight: 700; color: #8A94A6; padding: 9px 0; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .seg .on { background: #22304A; color: #fff; }
+  .card { background: #131A26; border: 1px solid #232D40; border-radius: 16px; padding: 14px; margin-top: 10px; }
+  .field { background: #0D121C; border: 1px solid #232D40; border-radius: 12px; padding: 12px; font-size: 14px; margin-top: 8px; line-height: 1.5; }
+  .field.q { border-color: #4F7CFF; }
+  .field .lab { font-size: 11px; font-weight: 800; letter-spacing: .07em; color: #4F7CFF; text-transform: uppercase; display: block; margin-bottom: 4px; }
+  .optrow { display: flex; align-items: center; gap: 10px; background: #0D121C; border: 1px solid #232D40; border-radius: 12px; padding: 11px 12px; margin-top: 8px; font-size: 14px; }
+  .optrow .k { width: 26px; height: 26px; border-radius: 8px; background: #22304A; color: #B9C3D4; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .optrow .x { margin-left: auto; color: #5B6678; }
+  .smart { display: flex; gap: 10px; align-items: flex-start; background: rgba(79,124,255,.1); border: 1px solid rgba(79,124,255,.35); border-radius: 12px; padding: 11px 12px; margin-top: 10px; font-size: 12.5px; color: #B9C9EE; line-height: 1.5; }
+  .q { font-size: 16px; font-weight: 700; line-height: 1.4; }
+  .ans { border-radius: 16px; padding: 16px; margin-top: 12px; background: rgba(52,211,153,.08); border: 1.5px solid #34D399; }
+  .ans .lab { font-size: 11px; font-weight: 800; letter-spacing: .07em; color: #34D399; text-transform: uppercase; }
+  .ans b { font-size: 18px; display: block; margin-top: 4px; }
+  .confbar { height: 8px; background: #1B2332; border-radius: 99px; overflow: hidden; margin-top: 10px; }
+  .confbar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg,#34D399,#4F7CFF); }
+  .probs { margin-top: 10px; }
+  .prob { display: flex; align-items: center; gap: 10px; font-size: 13.5px; padding: 9px 2px; border-bottom: 1px solid #161D2A; color: #B9C3D4; }
+  .prob b { margin-left: auto; color: #F2F5F9; }
+  .actions { display: flex; gap: 8px; margin-top: 12px; }
+  .chip { flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px; background: #131A26; border: 1px solid #232D40; color: #D5DCE8; border-radius: 12px; padding: 12px 0; font-size: 13.5px; font-weight: 700; }
+  .steps { margin-top: 12px; }
+  .step { display: flex; align-items: center; gap: 10px; font-size: 13.5px; padding: 9px 0; color: #8A94A6; }
+  .step.done { color: #D5DCE8; }
+  .spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid #22304A; border-top-color: #4F7CFF; margin: 22px auto 6px; }
+  .timer { text-align: center; font-size: 13px; color: #8A94A6; }
+  .timer b { color: #34D399; font-size: 20px; display: block; }
+  .price { border: 1.5px solid #232D40; background: #131A26; border-radius: 18px; padding: 16px; margin-top: 10px; }
+  .price.hot { border-color: #4F7CFF; background: linear-gradient(180deg, rgba(79,124,255,.14), #131A26 70%); }
+  .price h3 { font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .price p { font-size: 12.5px; color: #8A94A6; margin-top: 5px; line-height: 1.5; }
+  .price .sum { font-size: 26px; font-weight: 800; margin-top: 8px; }
+  .price .sum small { font-size: 12.5px; color: #8A94A6; font-weight: 400; }
+  .foot { font-size: 11px; color: #5B6678; text-align: center; margin-top: 12px; line-height: 1.55; }
+  .expl { font-size: 13.5px; line-height: 1.6; color: #C6CFDD; }
+  .back { display: flex; align-items: center; gap: 6px; color: #8A94A6; font-size: 13px; font-weight: 600; }
+  .title { font-size: 21px; font-weight: 800; margin-top: 10px; }
+  .vf { background: #05070C; border: 1px solid #232D40; border-radius: 16px; height: 190px; margin-top: 12px; position: relative; overflow: hidden;
+    background-image: linear-gradient(#141B29 1px, transparent 1px), linear-gradient(90deg, #141B29 1px, transparent 1px);
+    background-size: 100% 24px, 24px 100%; }
+  .vf .frame { position: absolute; left: 30px; right: 30px; top: 48px; height: 92px; border: 2px solid #4F7CFF; border-radius: 12px; }
+  .vf small { position: absolute; bottom: 12px; left: 0; right: 0; text-align: center; color: #4F7CFF; font-size: 11.5px; font-weight: 700; }
   code { font-size: 12px; }
+  .contract { max-width: 1240px; margin-top: 28px; background: #0D121C; border: 1px solid #232D40; border-radius: 16px; padding: 16px; font-size: 13px; line-height: 1.6; color: #B9C3D4; }
 </style>
 </head>
 <body>
-<h1>Тест-решалка на Jev — UI-макеты</h1>
-<p class="sub">База: <b>md-reader @ 215d1259</b>, токены Supreader (light). Флоу: <b>ввод/фото → ответ за секунды → объяснение → подписка</b>.
-Jev — только классификатор вариантов (state+statements, confidence); открытые вопросы и разборы — fallback дешёвый LLM + кэш. Контракт с движком — внизу страницы.</p>
-<p class="flow">Экраны 390×844 (6 шт. для скрин-прохода): 01_home → 02_camera → 03_solving → 04_result → 05_explain → 06_paywall</p>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><circle cx="12" cy="12" r="3.2"/></symbol>
+  <symbol id="i-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 6h14M5 10h14M5 14h9M5 18h6"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></symbol>
+  <symbol id="i-crown" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 8l4 3 5-6 5 6 4-3-1.5 10h-15z"/></symbol>
+  <symbol id="i-hist" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 5v5h5M4.5 10a8 8 0 1 1-1 5"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 11l8-7 8 7M6 9.5V20h12V9.5"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14.2 3H9.8l-.4 2.7a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2 1.2l.4 2.7h4.4l.4-2.7a7 7 0 0 0 2-1.2l2.3 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+</svg>
+
+<h1>Тест-решалка на Jev — премиум UI v2</h1>
+<p class="sub">База: <b>md-reader @ 215d1259</b>, ветка <b>keyz-test-solver-ui</b>. Что изменилось против v1: <b>ноль эмодзи</b> — все иконки строчные SVG;
+<b>тёмная премиум-тема</b> вместо светлой; главное меню перестроено вокруг таб-бара; CTA переехали в <b>липкую нижнюю зону</b> (зона большого пальца);
+ввод — <b>структурированный конструктор</b> (вопрос + опции A–D, умная вставка) вместо голого textarea. Контракт с движком без изменений.</p>
+<p class="flow">Экраны 390×844 (6 шт.): 01_home → 02_composer → 03_solving → 04_result → 05_explain → 06_paywall</p>
 
 <div class="grid">
 
 <!-- 01 -->
-<div><p class="caption"><b>01_home</b> — ввод/фото, счётчик free</p>
+<div><p class="caption"><b>01_home</b> — новое главное меню: таб-бар, hero-скан, тихие строки</p>
 <div class="phone"><div class="notch"></div><div class="screen">
-  <span class="pill">⚡ Jev inside · 70–500 мс</span>
-  <div class="apptitle" style="margin-top:10px">Тест<span>-решалка</span></div>
-  <p class="hint" style="margin-top:6px">Сфоткай тест или вставь текстом — ответ за секунды.</p>
-  <div class="row" style="margin-top:12px">
-    <div class="btn btn-dark">📷 Фото теста</div>
-    <div class="btn btn-ghost">📄 Из файла</div>
+  <div class="topbar">
+    <div class="logo">Solver<em> · Jev</em></div>
+    <div style="display:flex;gap:8px;align-items:center"><span class="pro-badge">PRO</span><div class="iconbtn"><svg class="ic"><use href="#i-gear"/></svg></div></div>
   </div>
-  <div class="textarea">Столица Австралии?<br>A) Сидней &nbsp; B) Канберра<br>C) Мельбурн &nbsp; D) Перт</div>
-  <div class="btn btn-primary">Решить ⚡</div>
-  <p class="hint" style="margin-top:8px">Jev оценивает варианты параллельно · кэш повторных вопросов</p>
-  <div class="counter"><span>Бесплатно сегодня: <b>17 / 20</b></span><span>PRO →</span></div>
+  <div class="stats">
+    <div class="stat"><b>12</b><span>решено сегодня</span></div>
+    <div class="stat"><b>0.4 c</b><span>средний ответ</span></div>
+    <div class="stat"><b>96%</b><span>уверенность</span></div>
+  </div>
+  <div class="hero">
+    <h2>Сканировать тест</h2>
+    <p>Фото вопроса — ответ за доли секунды</p>
+    <span class="go"><svg class="ic"><use href="#i-scan"/></svg> Открыть камеру</span>
+  </div>
+  <p class="sect">Новый тест</p>
+  <div class="rowline"><svg class="ic"><use href="#i-text"/></svg><div>Вставить текст<small>вопрос и варианты разложим сами</small></div><svg class="ic sm chev"><use href="#i-chev"/></svg></div>
+  <div class="rowline"><svg class="ic"><use href="#i-file"/></svg><div>Загрузить файл<small>PDF, DOCX, изображение</small></div><svg class="ic sm chev"><use href="#i-chev"/></svg></div>
+  <p class="sect">Недавние</p>
+  <div class="hist"><span class="dot"></span>Столица Австралии? — Канберра<small>94%</small></div>
+  <div class="hist"><span class="dot mid"></span>Закон Ома для участка цепи<small>71% · проверь</small></div>
+  <div class="tabbar">
+    <div class="tab on"><svg class="ic"><use href="#i-home"/></svg>Главная</div>
+    <div class="tab"><svg class="ic"><use href="#i-hist"/></svg>История</div>
+    <div class="tab"><svg class="ic"><use href="#i-crown"/></svg>PRO</div>
+  </div>
 </div></div></div>
 
 <!-- 02 -->
-<div><p class="caption"><b>02_camera</b> — съёмка теста</p>
+<div><p class="caption"><b>02_composer</b> — новый ввод: конструктор вопрос + опции, умная вставка</p>
 <div class="phone"><div class="notch"></div><div class="screen">
-  <div class="apptitle">Фото <span>теста</span></div>
-  <p class="hint" style="margin-top:6px">Наведи на вопрос с вариантами — обрежем и распознаем автоматически.</p>
-  <div class="viewfinder"><div class="scan"><small>вопрос + 4 варианта в рамке</small></div></div>
-  <div class="shutter"></div>
-  <p class="hint" style="text-align:center;margin-top:10px">или <u>выбрать из галереи</u></p>
-  <div class="counter"><span>OCR на устройстве</span><span>далее →</span></div>
+  <div class="topbar"><div class="back"><svg class="ic sm"><use href="#i-back"/></svg> Назад</div><div class="iconbtn"><svg class="ic"><use href="#i-scan"/></svg></div></div>
+  <div class="title">Новый тест</div>
+  <div class="seg"><div><svg class="ic sm"><use href="#i-text"/></svg> Текст</div><div class="on"><svg class="ic sm"><use href="#i-scan"/></svg> Камера</div><div><svg class="ic sm"><use href="#i-file"/></svg> Файл</div></div>
+  <div class="field q"><span class="lab">Вопрос</span>Столица Австралии?</div>
+  <div class="optrow"><span class="k">A</span>Сидней<span class="x">×</span></div>
+  <div class="optrow"><span class="k">B</span>Канберра<span class="x">×</span></div>
+  <div class="optrow"><span class="k">C</span>Мельбурн<span class="x">×</span></div>
+  <div class="optrow"><span class="k">D</span>Перт<span class="x">×</span></div>
+  <div class="rowline"><svg class="ic sm"><use href="#i-plus"/></svg><div style="font-size:13.5px">Добавить вариант</div></div>
+  <div class="smart"><svg class="ic"><use href="#i-bolt"/></svg><div>Вставьте текст целиком — разложим на вопрос и варианты автоматически, проверять ничего не нужно.</div></div>
+  <div class="sticky"><div class="cta">Решить <small>≈ 0.4 c · 1 запрос</small> <svg class="ic"><use href="#i-arrow"/></svg></div></div>
 </div></div></div>
 
 <!-- 03 -->
-<div><p class="caption"><b>03_solving</b> — решение 70–500 мс</p>
+<div><p class="caption"><b>03_solving</b> — решение: шаги + живой таймер</p>
 <div class="phone"><div class="notch"></div><div class="screen">
-  <div class="apptitle">Решаю<span>…</span></div>
+  <div class="topbar"><div class="back"><svg class="ic sm"><use href="#i-back"/></svg> Отмена</div><div class="iconbtn"><svg class="ic"><use href="#i-shield"/></svg></div></div>
+  <div class="title">Решаю</div>
   <div class="card">
     <div class="q">Столица Австралии?</div>
-    <p class="timer" style="margin-top:8px">Jev оценивает 4 варианта параллельно… <b>312 мс</b></p>
-    <div class="bar"><i style="width:78%"></i></div>
-    <p class="hint" style="margin-top:10px">state + statements → вероятности.<br>Порог confidence 0.80: ниже — fallback LLM.</p>
+    <div class="spin"></div>
+    <div class="timer"><b>0.31 c</b>Jev оценивает 4 варианта параллельно</div>
+    <div class="steps">
+      <div class="step done"><svg class="ic sm"><use href="#i-check"/></svg> Текст распознан и очищен</div>
+      <div class="step done"><svg class="ic sm"><use href="#i-check"/></svg> State собран, батч отправлен</div>
+      <div class="step"><svg class="ic sm"><use href="#i-clock"/></svg> Confidence-gate · порог 0.80</div>
+    </div>
   </div>
-  <div class="card"><span class="pill">A · Сидней</span> <span class="pill">B · Канберра</span> <span class="pill">C · Мельбурн</span> <span class="pill">D · Перт</span></div>
-  <div class="counter"><span>кэш: повтор — мгновенно, $0</span><span>…</span></div>
+  <div class="sticky"><div class="ghost">Повторный вопрос отдаст кэш — мгновенно, $0</div></div>
 </div></div></div>
 
 <!-- 04 -->
-<div><p class="caption"><b>04_result</b> — ответ + confidence</p>
+<div><p class="caption"><b>04_result</b> — ответ: CTA «Объяснение» внизу, копия/повтор — чипами</p>
 <div class="phone"><div class="notch"></div><div class="screen">
-  <span class="pill green">✓ Ответ готов за 0.4 сек</span>
-  <div class="q" style="margin-top:10px">Столица Австралии?</div>
-  <div class="opt win"><span><b>B) Канберра</b></span><span class="conf">94%</span></div>
-  <div class="opt"><span>A) Сидней</span><span class="low">3%</span></div>
-  <div class="opt"><span>C) Мельбурн</span><span class="low">2%</span></div>
-  <div class="opt"><span>D) Перт</span><span class="low">1%</span></div>
-  <div class="row"><div class="btn btn-primary">Объяснение</div><div class="btn btn-ghost">📋 Копировать</div></div>
-  <div class="row"><div class="btn btn-ghost">Следующий вопрос</div><div class="btn btn-ghost">История</div></div>
-  <div class="counter"><span>Осталось free: <b>16 / 20</b></span><span>PRO →</span></div>
+  <div class="topbar"><div class="back"><svg class="ic sm"><use href="#i-back"/></svg> К тестам</div><div style="display:flex;gap:8px"><div class="iconbtn"><svg class="ic"><use href="#i-copy"/></svg></div><div class="iconbtn"><svg class="ic"><use href="#i-hist"/></svg></div></div></div>
+  <div class="ans"><span class="lab">Ответ · 0.4 c</span><b>B — Канберра</b><div class="confbar"><i style="width:94%"></i></div><div class="probs">
+    <div class="prob">A — Сидней<b>3%</b></div>
+    <div class="prob">B — Канберра<b>94%</b></div>
+    <div class="prob">C — Мельбурн<b>2%</b></div>
+    <div class="prob">D — Перт<b>1%</b></div>
+  </div></div>
+  <div class="actions"><div class="chip"><svg class="ic sm"><use href="#i-copy"/></svg> Копировать</div><div class="chip"><svg class="ic sm"><use href="#i-plus"/></svg> Следующий</div></div>
+  <div class="counter" style="display:none"></div>
+  <div class="sticky"><div class="cta">Объяснение <svg class="ic"><use href="#i-arrow"/></svg></div><div class="ghost">Осталось бесплатно сегодня: 16 из 20</div></div>
 </div></div></div>
 
 <!-- 05 -->
-<div><p class="caption"><b>05_explain</b> — разбор (Jev + LLM)</p>
+<div><p class="caption"><b>05_explain</b> — разбор: когда включается LLM</p>
 <div class="phone"><div class="notch"></div><div class="screen">
-  <span class="pill amber">разбор · дешёвый LLM + кэш</span>
-  <div class="q" style="margin-top:10px">Почему Канберра?</div>
+  <div class="topbar"><div class="back"><svg class="ic sm"><use href="#i-back"/></svg> К ответу</div><div class="iconbtn"><svg class="ic"><use href="#i-copy"/></svg></div></div>
+  <div class="title">Почему Канберра</div>
   <div class="card"><p class="expl">Канберра — специально построенная столица (1913) как компромисс между Сиднеем и Мельбурном. Jev выбрал вариант B с confidence 0.94 — выше порога 0.80, fallback не понадобился.</p></div>
-  <p class="tag">Когда включается LLM</p>
-  <div class="card"><p class="expl">• confidence &lt; 0.80<br>• открытый вопрос без вариантов<br>• пользователь просит разбор</p></div>
-  <div class="btn btn-ghost">Задать уточняющий вопрос</div>
-  <div class="counter"><span>разборы — только в PRO</span><span>1.99 →</span></div>
+  <p class="sect">Когда включается LLM</p>
+  <div class="card"><p class="expl">— confidence ниже 0.80<br>— открытый вопрос без вариантов<br>— разбор по запросу пользователя</p></div>
+  <div class="sticky"><div class="cta">Задать уточняющий вопрос</div><div class="ghost">Разборы входят в PRO · от $1.99</div></div>
 </div></div></div>
 
 <!-- 06 -->
-<div><p class="caption"><b>06_paywall</b> — подписка 1.99</p>
+<div><p class="caption"><b>06_paywall</b> — подписка: CTA закреплён внизу</p>
 <div class="phone"><div class="notch"></div><div class="screen">
-  <div class="apptitle">PRO <span>⚡</span></div>
-  <p class="hint" style="margin-top:6px">API Jev стоит копейки — маржа огромная даже на 1.99.</p>
+  <div class="topbar"><div class="logo">Solver <em>PRO</em></div><div class="iconbtn"><svg class="ic"><use href="#i-back"/></svg></div></div>
+  <div class="card" style="display:flex;gap:10px;align-items:center"><svg class="ic"><use href="#i-bolt"/></svg><p class="expl">Себестоимость 1000 решений ≈ $0.07 — маржа огромная даже на базовом тарифе.</p></div>
   <div class="price"><h3>Free · $0</h3><p>20 решений в день · без разборов и истории</p><div class="sum">$0 <small>/ навсегда</small></div></div>
-  <div class="price hot"><h3>База · $1.99/мес ⭐</h3><p>200 решений в день · разборы · история 30 дней</p><div class="sum">$1.99 <small>/ месяц</small></div></div>
-  <div class="price"><h3>Безлимит · $4.99/мес</h3><p>без лимитов · разборы · история без срока · приоритет</p><div class="sum">$4.99 <small>/ месяц</small></div></div>
-  <div class="btn btn-primary">Оформить за $1.99</div>
-  <p class="foot">Отмена в один тап · оплата RevenueCat / Stripe<br>Цены для старта, обсудим после цифр Ares по себестоимости</p>
+  <div class="price hot"><h3><svg class="ic sm"><use href="#i-crown"/></svg> База · $1.99/мес</h3><p>200 решений в день · разборы · история 30 дней</p><div class="sum">$1.99 <small>/ месяц</small></div></div>
+  <div class="price"><h3>Безлимит · $4.99/мес</h3><p>Без лимитов · разборы · история без срока · приоритет</p><div class="sum">$4.99 <small>/ месяц</small></div></div>
+  <div class="sticky"><div class="cta"><svg class="ic"><use href="#i-crown"/></svg> Оформить за $1.99</div><div class="foot ghost">Отмена в один тап · RevenueCat / Stripe</div></div>
 </div></div></div>
 
 </div>
 
-<div class="card" style="max-width:1240px;margin-top:28px">
-  <b>Контракт с движком (Ares) — NATIVE OWNER (Ares): заменить моки на вызовы движка, UI ключи не менять</b><br><br>
+<div class="contract">
+  <b>Мозговой штурм кнопок (что куда переехало):</b> камера из строки-кнопки → hero-карта на главном (главный сценарий — фото);
+  «Решить» из середины экрана → липкий низ (зона большого пальца); «Из файла»/«Вставить» из равноправных кнопок → тихие строки (вторичны);
+  копировать/следующий из больших кнопок → чипы и иконки в топбаре результата; история из кнопки → вкладка таб-бара;
+  счётчик free из тёмной плашки → строка под CTA; paywall-CTA → липкий низ. Новое главное меню: топбар (лого + PRO + настройки) → статистика → hero-камера → строки ввода → недавние → таб-бар.<br><br>
+  <b>Контракт с движком (Ares) — NATIVE OWNER (Ares): заменить моки на вызовы движка, UI ключи не менять.</b><br>
   <code>routes: SolverHome, SolverCamera, SolverSolving, SolverResult, SolverExplain, Paywall · storage keys: jev_solver_history_v1, jev_solver_quota_v1, jev_solver_sub_v1 · engine call: solveTest(question, options[]) → { answerIndex, confidence[ ], ms, fallback: bool } · порог fallback 0.80</code>
 </div>
 
