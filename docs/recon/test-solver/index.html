@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Тест-решалка на Jev — премиум UI v2 (390x844)</title>
+<title>Veritas — премиум UI v3 (390x844)</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Inter, -apple-system, 'Segoe UI', Roboto, sans-serif; background: #070A10; color: #E8EDF4; padding: 32px 24px 64px; }
@@ -18,10 +18,10 @@
   .caption { font-size: 13px; color: #8A94A6; margin-bottom: 10px; max-width: 390px; line-height: 1.5; }
   .caption b { color: #E8EDF4; }
   .topbar { display: flex; align-items: center; justify-content: space-between; }
-  .logo { font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
+  .logo { font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
   .logo em { font-style: normal; background: linear-gradient(90deg,#4F7CFF,#7C5CFF); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .pro-badge { font-size: 11px; font-weight: 800; letter-spacing: .08em; color: #0B0F17; background: linear-gradient(90deg,#F5D67B,#E8B84B); border-radius: 99px; padding: 5px 10px; }
-  .iconbtn { width: 38px; height: 38px; border-radius: 12px; background: #131A26; border: 1px solid #232D40; display: flex; align-items: center; justify-content: center; color: #B9C3D4; }
+  .iconbtn { width: 38px; height: 38px; border-radius: 12px; background: #131A26; border: 1px solid #232D40; display: flex; align-items: center; justify-content: center; color: #B9C3D4; flex-shrink: 0; }
   .ic { width: 20px; height: 20px; }
   .ic.sm { width: 16px; height: 16px; }
   .stats { display: flex; gap: 8px; margin-top: 14px; }
@@ -49,7 +49,7 @@
   .cta small { font-weight: 400; opacity: .8; font-size: 13px; }
   .ghost { display: block; text-align: center; font-size: 14px; font-weight: 600; color: #9AA6B8; margin-top: 12px; }
   .seg { display: flex; background: #131A26; border: 1px solid #232D40; border-radius: 14px; padding: 4px; margin-top: 12px; }
-  .seg div { flex: 1; text-align: center; font-size: 13px; font-weight: 700; color: #8A94A6; padding: 9px 0; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .seg div { flex: 1; text-align: center; font-size: 12px; font-weight: 700; color: #8A94A6; padding: 9px 0; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 5px; }
   .seg .on { background: #22304A; color: #fff; }
   .card { background: #131A26; border: 1px solid #232D40; border-radius: 16px; padding: 14px; margin-top: 10px; }
   .field { background: #0D121C; border: 1px solid #232D40; border-radius: 12px; padding: 12px; font-size: 14px; margin-top: 8px; line-height: 1.5; }
@@ -73,7 +73,11 @@
   .steps { margin-top: 12px; }
   .step { display: flex; align-items: center; gap: 10px; font-size: 13.5px; padding: 9px 0; color: #8A94A6; }
   .step.done { color: #D5DCE8; }
+  .step.act { color: #fff; }
+  .pbar { height: 6px; background: #1B2332; border-radius: 99px; overflow: hidden; margin-top: 6px; margin-left: 26px; }
+  .pbar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg,#4F7CFF,#7C5CFF); }
   .spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid #22304A; border-top-color: #4F7CFF; margin: 22px auto 6px; }
+  .spin.sm { width: 16px; height: 16px; border-width: 2px; margin: 0; flex-shrink: 0; }
   .timer { text-align: center; font-size: 13px; color: #8A94A6; }
   .timer b { color: #34D399; font-size: 20px; display: block; }
   .price { border: 1.5px solid #232D40; background: #131A26; border-radius: 18px; padding: 16px; margin-top: 10px; }
@@ -86,11 +90,22 @@
   .expl { font-size: 13.5px; line-height: 1.6; color: #C6CFDD; }
   .back { display: flex; align-items: center; gap: 6px; color: #8A94A6; font-size: 13px; font-weight: 600; }
   .title { font-size: 21px; font-weight: 800; margin-top: 10px; }
-  .vf { background: #05070C; border: 1px solid #232D40; border-radius: 16px; height: 190px; margin-top: 12px; position: relative; overflow: hidden;
+  .vf { background: #05070C; border: 1px solid #232D40; border-radius: 16px; height: 180px; margin-top: 12px; position: relative; overflow: hidden;
     background-image: linear-gradient(#141B29 1px, transparent 1px), linear-gradient(90deg, #141B29 1px, transparent 1px);
     background-size: 100% 24px, 24px 100%; }
-  .vf .frame { position: absolute; left: 30px; right: 30px; top: 48px; height: 92px; border: 2px solid #4F7CFF; border-radius: 12px; }
-  .vf small { position: absolute; bottom: 12px; left: 0; right: 0; text-align: center; color: #4F7CFF; font-size: 11.5px; font-weight: 700; }
+  .vf .frame { position: absolute; left: 30px; right: 30px; top: 42px; height: 92px; border: 2px solid #4F7CFF; border-radius: 12px; }
+  .vf small { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; color: #4F7CFF; font-size: 11.5px; font-weight: 700; }
+  .thumbs { display: flex; gap: 8px; margin-top: 10px; }
+  .thumb { flex: 1; height: 64px; border-radius: 12px; background: #131A26; border: 1.5px solid #232D40; display: flex; align-items: center; justify-content: center; color: #5B6678; font-size: 11px; font-weight: 700; }
+  .thumb.sel { border-color: #4F7CFF; color: #B9C9EE; background: rgba(79,124,255,.1); }
+  .file { display: flex; align-items: center; gap: 10px; background: #0D121C; border: 1px solid #232D40; border-radius: 12px; padding: 11px 12px; margin-top: 8px; font-size: 13.5px; font-weight: 600; }
+  .file small { display: block; font-weight: 400; color: #8A94A6; font-size: 11.5px; margin-top: 2px; }
+  .file .st { margin-left: auto; flex-shrink: 0; display: flex; align-items: center; }
+  .err { border: 1.5px solid rgba(248,113,113,.5); background: rgba(248,113,113,.07); border-radius: 14px; padding: 13px 14px; margin-top: 10px; }
+  .err h4 { font-size: 13.5px; color: #FCA5A5; display: flex; align-items: center; gap: 8px; }
+  .err p { font-size: 12.5px; color: #B9C3D4; margin-top: 6px; line-height: 1.5; }
+  .err .re { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; background: #F87171; color: #0B0F17; font-weight: 800; font-size: 13px; border-radius: 10px; padding: 9px 14px; }
+  .tip { display: flex; gap: 10px; align-items: flex-start; background: rgba(52,211,153,.07); border: 1px solid rgba(52,211,153,.3); border-radius: 12px; padding: 11px 12px; margin-top: 10px; font-size: 12.5px; color: #A7D8C5; line-height: 1.5; }
   code { font-size: 12px; }
   .contract { max-width: 1240px; margin-top: 28px; background: #0D121C; border: 1px solid #232D40; border-radius: 16px; padding: 16px; font-size: 13px; line-height: 1.6; color: #B9C3D4; }
 </style>
@@ -101,6 +116,7 @@
   <symbol id="i-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><circle cx="12" cy="12" r="3.2"/></symbol>
   <symbol id="i-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 6h14M5 10h14M5 14h9M5 18h6"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-img" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 18l5-5 3 3 4-4 4 4"/></symbol>
   <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></symbol>
@@ -114,21 +130,23 @@
   <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14.2 3H9.8l-.4 2.7a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2 1.2l.4 2.7h4.4l.4-2.7a7 7 0 0 0 2-1.2l2.3 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3 2.5 20h19z"/><path d="M12 9.5V14M12 17v.5"/></symbol>
 </svg>
 
-<h1>Тест-решалка на Jev — премиум UI v2</h1>
-<p class="sub">База: <b>md-reader @ 215d1259</b>, ветка <b>keyz-test-solver-ui</b>. Что изменилось против v1: <b>ноль эмодзи</b> — все иконки строчные SVG;
-<b>тёмная премиум-тема</b> вместо светлой; главное меню перестроено вокруг таб-бара; CTA переехали в <b>липкую нижнюю зону</b> (зона большого пальца);
-ввод — <b>структурированный конструктор</b> (вопрос + опции A–D, умная вставка) вместо голого textarea. Контракт с движком без изменений.</p>
-<p class="flow">Экраны 390×844 (6 шт.): 01_home → 02_composer → 03_solving → 04_result → 05_explain → 06_paywall</p>
+<h1>Veritas — премиум UI v3</h1>
+<p class="sub">База: <b>md-reader @ 215d1259</b>, ветка <b>keyz-test-solver-ui</b>. Новое в v3: <b>ребренд в Veritas — ноль упоминаний движка</b>;
+<b>единая подача</b> — камера, скриншот из галереи, документ (PDF / Word / изображение) и текст ведут в один конвейер;
+<b>новый экран подготовки</b> — прогресс конвертации по шагам, список файлов, карточка ошибки плохого фото с пересъёмкой.
+Ключи хранилища переименованы в <b>veritas_*</b> — движку принять. Контракт внизу.</p>
+<p class="flow">Экраны 390×844 (6 шт.): 01_home → 02_capture → 03_convert → 04_solving → 05_result → 06_paywall</p>
 
 <div class="grid">
 
 <!-- 01 -->
-<div><p class="caption"><b>01_home</b> — новое главное меню: таб-бар, hero-скан, тихие строки</p>
+<div><p class="caption"><b>01_home</b> — Veritas: hero-скан, 4 входа в один конвейер</p>
 <div class="phone"><div class="notch"></div><div class="screen">
   <div class="topbar">
-    <div class="logo">Solver<em> · Jev</em></div>
+    <div class="logo">Veritas</div>
     <div style="display:flex;gap:8px;align-items:center"><span class="pro-badge">PRO</span><div class="iconbtn"><svg class="ic"><use href="#i-gear"/></svg></div></div>
   </div>
   <div class="stats">
@@ -137,16 +155,15 @@
     <div class="stat"><b>96%</b><span>уверенность</span></div>
   </div>
   <div class="hero">
-    <h2>Сканировать тест</h2>
-    <p>Фото вопроса — ответ за доли секунды</p>
-    <span class="go"><svg class="ic"><use href="#i-scan"/></svg> Открыть камеру</span>
+    <h2>Решить тест</h2>
+    <p>Фото, скриншот или документ — ответ за секунды</p>
+    <span class="go"><svg class="ic"><use href="#i-scan"/></svg> Сканировать</span>
   </div>
   <p class="sect">Новый тест</p>
+  <div class="rowline"><svg class="ic"><use href="#i-scan"/></svg><div>Камера<small>снять вопрос прямо сейчас</small></div><svg class="ic sm chev"><use href="#i-chev"/></svg></div>
+  <div class="rowline"><svg class="ic"><use href="#i-img"/></svg><div>Скриншот<small>выбрать из галереи</small></div><svg class="ic sm chev"><use href="#i-chev"/></svg></div>
+  <div class="rowline"><svg class="ic"><use href="#i-file"/></svg><div>Документ<small>PDF, Word, изображение</small></div><svg class="ic sm chev"><use href="#i-chev"/></svg></div>
   <div class="rowline"><svg class="ic"><use href="#i-text"/></svg><div>Вставить текст<small>вопрос и варианты разложим сами</small></div><svg class="ic sm chev"><use href="#i-chev"/></svg></div>
-  <div class="rowline"><svg class="ic"><use href="#i-file"/></svg><div>Загрузить файл<small>PDF, DOCX, изображение</small></div><svg class="ic sm chev"><use href="#i-chev"/></svg></div>
-  <p class="sect">Недавние</p>
-  <div class="hist"><span class="dot"></span>Столица Австралии? — Канберра<small>94%</small></div>
-  <div class="hist"><span class="dot mid"></span>Закон Ома для участка цепи<small>71% · проверь</small></div>
   <div class="tabbar">
     <div class="tab on"><svg class="ic"><use href="#i-home"/></svg>Главная</div>
     <div class="tab"><svg class="ic"><use href="#i-hist"/></svg>История</div>
@@ -155,41 +172,58 @@
 </div></div></div>
 
 <!-- 02 -->
-<div><p class="caption"><b>02_composer</b> — новый ввод: конструктор вопрос + опции, умная вставка</p>
+<div><p class="caption"><b>02_capture</b> — съёмка и скриншоты: рамка, лента галереи, советы</p>
 <div class="phone"><div class="notch"></div><div class="screen">
-  <div class="topbar"><div class="back"><svg class="ic sm"><use href="#i-back"/></svg> Назад</div><div class="iconbtn"><svg class="ic"><use href="#i-scan"/></svg></div></div>
-  <div class="title">Новый тест</div>
-  <div class="seg"><div><svg class="ic sm"><use href="#i-text"/></svg> Текст</div><div class="on"><svg class="ic sm"><use href="#i-scan"/></svg> Камера</div><div><svg class="ic sm"><use href="#i-file"/></svg> Файл</div></div>
-  <div class="field q"><span class="lab">Вопрос</span>Столица Австралии?</div>
-  <div class="optrow"><span class="k">A</span>Сидней<span class="x">×</span></div>
-  <div class="optrow"><span class="k">B</span>Канберра<span class="x">×</span></div>
-  <div class="optrow"><span class="k">C</span>Мельбурн<span class="x">×</span></div>
-  <div class="optrow"><span class="k">D</span>Перт<span class="x">×</span></div>
-  <div class="rowline"><svg class="ic sm"><use href="#i-plus"/></svg><div style="font-size:13.5px">Добавить вариант</div></div>
-  <div class="smart"><svg class="ic"><use href="#i-bolt"/></svg><div>Вставьте текст целиком — разложим на вопрос и варианты автоматически, проверять ничего не нужно.</div></div>
-  <div class="sticky"><div class="cta">Решить <small>≈ 0.4 c · 1 запрос</small> <svg class="ic"><use href="#i-arrow"/></svg></div></div>
+  <div class="topbar"><div class="back"><svg class="ic sm"><use href="#i-back"/></svg> Назад</div><div class="iconbtn"><svg class="ic"><use href="#i-bolt"/></svg></div></div>
+  <div class="title">Съёмка</div>
+  <div class="seg"><div class="on"><svg class="ic sm"><use href="#i-scan"/></svg> Камера</div><div><svg class="ic sm"><use href="#i-img"/></svg> Скриншот</div><div><svg class="ic sm"><use href="#i-file"/></svg> Файл</div></div>
+  <div class="vf"><div class="frame"></div><small>вопрос и варианты — внутри рамки</small></div>
+  <p class="sect">Из галереи</p>
+  <div class="thumbs"><div class="thumb sel">IMG_2041</div><div class="thumb">IMG_2040</div><div class="thumb">IMG_2039</div></div>
+  <div class="tip"><svg class="ic"><use href="#i-check"/></svg><div>Хорошее фото: ровный свет, весь текст в кадре, без бликов и наклона. Плохое — отклоним до решения и попросим переснять.</div></div>
+  <div class="sticky"><div class="cta">Продолжить <svg class="ic"><use href="#i-arrow"/></svg></div></div>
 </div></div></div>
 
 <!-- 03 -->
-<div><p class="caption"><b>03_solving</b> — решение: шаги + живой таймер</p>
+<div><p class="caption"><b>03_convert</b> — подготовка: файлы, шаги конвертера, ошибка фото</p>
+<div class="phone"><div class="notch"></div><div class="screen">
+  <div class="topbar"><div class="back"><svg class="ic sm"><use href="#i-back"/></svg> Назад</div><div class="iconbtn"><svg class="ic"><use href="#i-shield"/></svg></div></div>
+  <div class="title">Подготовка</div>
+  <div class="file"><svg class="ic"><use href="#i-img"/></svg><div>IMG_2041.jpg<small>скриншот · готов</small></div><div class="st"><svg class="ic sm" style="color:#34D399"><use href="#i-check"/></svg></div></div>
+  <div class="file"><svg class="ic"><use href="#i-file"/></svg><div>bilet-12.pdf<small>PDF · 4 страницы · обработка</small></div><div class="st"><div class="spin sm"></div></div></div>
+  <div class="card"><p class="sect" style="margin-top:0">Конвертер</p>
+    <div class="steps">
+      <div class="step done"><svg class="ic sm"><use href="#i-check"/></svg> Изображения улучшены</div>
+      <div class="step done"><svg class="ic sm"><use href="#i-check"/></svg> Текст распознан</div>
+      <div class="step done"><svg class="ic sm"><use href="#i-check"/></svg> Мусор убран</div>
+      <div class="step act"><div class="spin sm"></div> Разбивка на вопросы · 3 найдено</div>
+      <div class="pbar"><i style="width:62%"></i></div>
+    </div>
+  </div>
+  <div class="err"><h4><svg class="ic sm"><use href="#i-alert"/></svg> IMG_2040 отклонено</h4><p>Темно и размыто — текст не читается. Подойдите ближе при ровном свете и снимите заново.</p><span class="re"><svg class="ic sm"><use href="#i-scan"/></svg> Переснять</span></div>
+  <div class="sticky"><div class="cta">Решить · 3 вопроса <small>≈ 1 c</small></div></div>
+</div></div></div>
+
+<!-- 04 -->
+<div><p class="caption"><b>04_solving</b> — решение: шаги + живой таймер</p>
 <div class="phone"><div class="notch"></div><div class="screen">
   <div class="topbar"><div class="back"><svg class="ic sm"><use href="#i-back"/></svg> Отмена</div><div class="iconbtn"><svg class="ic"><use href="#i-shield"/></svg></div></div>
   <div class="title">Решаю</div>
   <div class="card">
     <div class="q">Столица Австралии?</div>
     <div class="spin"></div>
-    <div class="timer"><b>0.31 c</b>Jev оценивает 4 варианта параллельно</div>
+    <div class="timer"><b>0.31 c</b>4 варианта оцениваются параллельно</div>
     <div class="steps">
-      <div class="step done"><svg class="ic sm"><use href="#i-check"/></svg> Текст распознан и очищен</div>
-      <div class="step done"><svg class="ic sm"><use href="#i-check"/></svg> State собран, батч отправлен</div>
-      <div class="step"><svg class="ic sm"><use href="#i-clock"/></svg> Confidence-gate · порог 0.80</div>
+      <div class="step done"><svg class="ic sm"><use href="#i-check"/></svg> Текст готов к решению</div>
+      <div class="step done"><svg class="ic sm"><use href="#i-check"/></svg> Запрос собран, батч отправлен</div>
+      <div class="step"><svg class="ic sm"><use href="#i-clock"/></svg> Проверка уверенности · порог 0.80</div>
     </div>
   </div>
-  <div class="sticky"><div class="ghost">Повторный вопрос отдаст кэш — мгновенно, $0</div></div>
+  <div class="sticky"><div class="ghost">Повторный вопрос отдаст кэш — мгновенно</div></div>
 </div></div></div>
 
-<!-- 04 -->
-<div><p class="caption"><b>04_result</b> — ответ: CTA «Объяснение» внизу, копия/повтор — чипами</p>
+<!-- 05 -->
+<div><p class="caption"><b>05_result</b> — ответ + разбор без упоминания движка</p>
 <div class="phone"><div class="notch"></div><div class="screen">
   <div class="topbar"><div class="back"><svg class="ic sm"><use href="#i-back"/></svg> К тестам</div><div style="display:flex;gap:8px"><div class="iconbtn"><svg class="ic"><use href="#i-copy"/></svg></div><div class="iconbtn"><svg class="ic"><use href="#i-hist"/></svg></div></div></div>
   <div class="ans"><span class="lab">Ответ · 0.4 c</span><b>B — Канберра</b><div class="confbar"><i style="width:94%"></i></div><div class="probs">
@@ -198,27 +232,16 @@
     <div class="prob">C — Мельбурн<b>2%</b></div>
     <div class="prob">D — Перт<b>1%</b></div>
   </div></div>
+  <div class="card"><p class="expl">Канберра — специально построенная столица (1913) как компромисс между Сиднеем и Мельбурном. Уверенность 94% — выше порога 0.80.</p></div>
   <div class="actions"><div class="chip"><svg class="ic sm"><use href="#i-copy"/></svg> Копировать</div><div class="chip"><svg class="ic sm"><use href="#i-plus"/></svg> Следующий</div></div>
-  <div class="counter" style="display:none"></div>
-  <div class="sticky"><div class="cta">Объяснение <svg class="ic"><use href="#i-arrow"/></svg></div><div class="ghost">Осталось бесплатно сегодня: 16 из 20</div></div>
-</div></div></div>
-
-<!-- 05 -->
-<div><p class="caption"><b>05_explain</b> — разбор: когда включается LLM</p>
-<div class="phone"><div class="notch"></div><div class="screen">
-  <div class="topbar"><div class="back"><svg class="ic sm"><use href="#i-back"/></svg> К ответу</div><div class="iconbtn"><svg class="ic"><use href="#i-copy"/></svg></div></div>
-  <div class="title">Почему Канберра</div>
-  <div class="card"><p class="expl">Канберра — специально построенная столица (1913) как компромисс между Сиднеем и Мельбурном. Jev выбрал вариант B с confidence 0.94 — выше порога 0.80, fallback не понадобился.</p></div>
-  <p class="sect">Когда включается LLM</p>
-  <div class="card"><p class="expl">— confidence ниже 0.80<br>— открытый вопрос без вариантов<br>— разбор по запросу пользователя</p></div>
-  <div class="sticky"><div class="cta">Задать уточняющий вопрос</div><div class="ghost">Разборы входят в PRO · от $1.99</div></div>
+  <div class="sticky"><div class="cta">Задать уточняющий вопрос</div><div class="ghost">Осталось бесплатно сегодня: 16 из 20</div></div>
 </div></div></div>
 
 <!-- 06 -->
-<div><p class="caption"><b>06_paywall</b> — подписка: CTA закреплён внизу</p>
+<div><p class="caption"><b>06_paywall</b> — Veritas PRO: ценность вместо себестоимости</p>
 <div class="phone"><div class="notch"></div><div class="screen">
-  <div class="topbar"><div class="logo">Solver <em>PRO</em></div><div class="iconbtn"><svg class="ic"><use href="#i-back"/></svg></div></div>
-  <div class="card" style="display:flex;gap:10px;align-items:center"><svg class="ic"><use href="#i-bolt"/></svg><p class="expl">Себестоимость 1000 решений ≈ $0.07 — маржа огромная даже на базовом тарифе.</p></div>
+  <div class="topbar"><div class="logo">Veritas <em>PRO</em></div><div class="iconbtn"><svg class="ic"><use href="#i-back"/></svg></div></div>
+  <div class="card" style="display:flex;gap:10px;align-items:center"><svg class="ic"><use href="#i-bolt"/></svg><p class="expl">Ответы за секунды · разбор каждого ответа · история без срока.</p></div>
   <div class="price"><h3>Free · $0</h3><p>20 решений в день · без разборов и истории</p><div class="sum">$0 <small>/ навсегда</small></div></div>
   <div class="price hot"><h3><svg class="ic sm"><use href="#i-crown"/></svg> База · $1.99/мес</h3><p>200 решений в день · разборы · история 30 дней</p><div class="sum">$1.99 <small>/ месяц</small></div></div>
   <div class="price"><h3>Безлимит · $4.99/мес</h3><p>Без лимитов · разборы · история без срока · приоритет</p><div class="sum">$4.99 <small>/ месяц</small></div></div>
@@ -228,12 +251,12 @@
 </div>
 
 <div class="contract">
-  <b>Мозговой штурм кнопок (что куда переехало):</b> камера из строки-кнопки → hero-карта на главном (главный сценарий — фото);
-  «Решить» из середины экрана → липкий низ (зона большого пальца); «Из файла»/«Вставить» из равноправных кнопок → тихие строки (вторичны);
-  копировать/следующий из больших кнопок → чипы и иконки в топбаре результата; история из кнопки → вкладка таб-бара;
-  счётчик free из тёмной плашки → строка под CTA; paywall-CTA → липкий низ. Новое главное меню: топбар (лого + PRO + настройки) → статистика → hero-камера → строки ввода → недавние → таб-бар.<br><br>
+  <b>Подача и конвертер (единый пайплайн):</b> камера / скриншот / PDF / Word / текст → улучшение изображения →
+  распознавание текста → чистка → разбивка на вопросы → sha256(вопрос+опции) → кэш → решение → проверка уверенности (0.85 принять,
+  0.6–0.85 с пометкой «проверь», ниже — углублённый разбор). Плохое фото отклоняется ДО решения с карточкой ошибки и кнопкой пересъёмки.
+  Word и PDF идут тем же путём через извлечение текста постранично.<br><br>
   <b>Контракт с движком (Ares) — NATIVE OWNER (Ares): заменить моки на вызовы движка, UI ключи не менять.</b><br>
-  <code>routes: SolverHome, SolverCamera, SolverSolving, SolverResult, SolverExplain, Paywall · storage keys: jev_solver_history_v1, jev_solver_quota_v1, jev_solver_sub_v1 · engine call: solveTest(question, options[]) → { answerIndex, confidence[ ], ms, fallback: bool } · порог fallback 0.80</code>
+  <code>routes: VeritasHome, VeritasCapture, VeritasConvert, VeritasSolving, VeritasResult, Paywall · storage keys: veritas_history_v1, veritas_quota_v1, veritas_sub_v1 (движку принять новые ключи) · engine calls: ingestFile(file) → { text, questions[ ], warnings[ ] }, solveTest(question, options[]) → { answerIndex, confidence[ ], ms, fallback: bool } · порог 0.80</code>
 </div>
 
 </body>
