@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Veritas — премиум UI v3 (390x844)</title>
+<title>Apo — премиум UI v3 (390x844)</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Inter, -apple-system, 'Segoe UI', Roboto, sans-serif; background: #070A10; color: #E8EDF4; padding: 32px 24px 64px; }
@@ -106,6 +106,23 @@
   .err p { font-size: 12.5px; color: #B9C3D4; margin-top: 6px; line-height: 1.5; }
   .err .re { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; background: #F87171; color: #0B0F17; font-weight: 800; font-size: 13px; border-radius: 10px; padding: 9px 14px; }
   .tip { display: flex; gap: 10px; align-items: flex-start; background: rgba(52,211,153,.07); border: 1px solid rgba(52,211,153,.3); border-radius: 12px; padding: 11px 12px; margin-top: 10px; font-size: 12.5px; color: #A7D8C5; line-height: 1.5; }
+  .screen.flush { padding: 56px 0 0; }
+  .cam { position: relative; flex: 1; margin: 12px 0 0; background: #05070C; overflow: hidden;
+    background-image: linear-gradient(#141B29 1px, transparent 1px), linear-gradient(90deg, #141B29 1px, transparent 1px);
+    background-size: 100% 26px, 26px 100%; }
+  .cam .frame { position: absolute; left: 34px; right: 34px; top: 22%; height: 34%; border: 2px solid #4F7CFF; border-radius: 14px; }
+  .cam .overlay-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; }
+  .cam .tag-live { font-size: 11px; font-weight: 800; letter-spacing: .08em; color: #B9C9EE; background: rgba(11,15,23,.7); border: 1px solid #232D40; border-radius: 99px; padding: 6px 10px; }
+  .sheet { margin: 0; padding: 12px 18px 0; background: #0D121C; border-top: 1px solid #161D2A; border-radius: 20px 20px 0 0; }
+  .strip { display: flex; gap: 8px; margin-top: 8px; }
+  .cell { width: 64px; height: 64px; border-radius: 12px; background: #131A26; border: 1.5px solid #232D40; display: flex; align-items: center; justify-content: center; color: #5B6678; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+  .cell.sel { border-color: #4F7CFF; color: #B9C9EE; }
+  .shutterbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 26px 0; }
+  .shutter { width: 68px; height: 68px; border-radius: 50%; background: #fff; border: 6px solid #4F7CFF; }
+  .warn { border: 1.5px solid rgba(251,191,36,.5); background: rgba(251,191,36,.07); border-radius: 14px; padding: 13px 14px; margin-top: 10px; }
+  .warn h4 { font-size: 13.5px; color: #FCD34D; display: flex; align-items: center; gap: 8px; }
+  .warn p { font-size: 12.5px; color: #B9C3D4; margin-top: 6px; line-height: 1.5; }
+  .explain-btn { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; border: 1.5px solid #4F7CFF; color: #B9C9EE; border-radius: 12px; padding: 12px; font-size: 13.5px; font-weight: 800; }
   code { font-size: 12px; }
   .contract { max-width: 1240px; margin-top: 28px; background: #0D121C; border: 1px solid #232D40; border-radius: 16px; padding: 16px; font-size: 13px; line-height: 1.6; color: #B9C3D4; }
 </style>
@@ -133,20 +150,20 @@
   <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3 2.5 20h19z"/><path d="M12 9.5V14M12 17v.5"/></symbol>
 </svg>
 
-<h1>Veritas — премиум UI v3</h1>
-<p class="sub">База: <b>md-reader @ 215d1259</b>, ветка <b>keyz-test-solver-ui</b>. Новое в v3: <b>ребренд в Veritas — ноль упоминаний движка</b>;
+<h1>Apo — премиум UI v3</h1>
+<p class="sub">База: <b>md-reader @ 215d1259</b>, ветка <b>keyz-test-solver-ui</b>. Новое в v3: <b>ребренд в Apo — ноль упоминаний движка</b>;
 <b>единая подача</b> — камера, скриншот из галереи, документ (PDF / Word / изображение) и текст ведут в один конвейер;
 <b>новый экран подготовки</b> — прогресс конвертации по шагам, список файлов, карточка ошибки плохого фото с пересъёмкой.
-Ключи хранилища переименованы в <b>veritas_*</b> — движку принять. Контракт внизу.</p>
+Ключи хранилища переименованы в <b>apo_*</b> — движку принять. Контракт внизу.</p>
 <p class="flow">Экраны 390×844 (6 шт.): 01_home → 02_capture → 03_convert → 04_solving → 05_result → 06_paywall</p>
 
 <div class="grid">
 
 <!-- 01 -->
-<div><p class="caption"><b>01_home</b> — Veritas: hero-скан, 4 входа в один конвейер</p>
+<div><p class="caption"><b>01_home</b> — Apo: hero-скан, 4 входа в один конвейер</p>
 <div class="phone"><div class="notch"></div><div class="screen">
   <div class="topbar">
-    <div class="logo">Veritas</div>
+    <div class="logo">Apo</div>
     <div style="display:flex;gap:8px;align-items:center"><span class="pro-badge">PRO</span><div class="iconbtn"><svg class="ic"><use href="#i-gear"/></svg></div></div>
   </div>
   <div class="stats">
@@ -172,16 +189,16 @@
 </div></div></div>
 
 <!-- 02 -->
-<div><p class="caption"><b>02_capture</b> — съёмка и скриншоты: рамка, лента галереи, советы</p>
-<div class="phone"><div class="notch"></div><div class="screen">
-  <div class="topbar"><div class="back"><svg class="ic sm"><use href="#i-back"/></svg> Назад</div><div class="iconbtn"><svg class="ic"><use href="#i-bolt"/></svg></div></div>
-  <div class="title">Съёмка</div>
-  <div class="seg"><div class="on"><svg class="ic sm"><use href="#i-scan"/></svg> Камера</div><div><svg class="ic sm"><use href="#i-img"/></svg> Скриншот</div><div><svg class="ic sm"><use href="#i-file"/></svg> Файл</div></div>
-  <div class="vf"><div class="frame"></div><small>вопрос и варианты — внутри рамки</small></div>
-  <p class="sect">Из галереи</p>
-  <div class="thumbs"><div class="thumb sel">IMG_2041</div><div class="thumb">IMG_2040</div><div class="thumb">IMG_2039</div></div>
-  <div class="tip"><svg class="ic"><use href="#i-check"/></svg><div>Хорошее фото: ровный свет, весь текст в кадре, без бликов и наклона. Плохое — отклоним до решения и попросим переснять.</div></div>
-  <div class="sticky"><div class="cta">Продолжить <svg class="ic"><use href="#i-arrow"/></svg></div></div>
+<div><p class="caption"><b>02_capture</b> — полноэкранная камера + галерея снизу</p>
+<div class="phone"><div class="notch"></div><div class="screen flush">
+  <div class="topbar" style="padding:0 18px"><div class="back"><svg class="ic sm"><use href="#i-back"/></svg> Назад</div><div class="iconbtn"><svg class="ic"><use href="#i-bolt"/></svg></div></div>
+  <div class="cam"><div class="overlay-top"><span class="tag-live">Камера · авто</span><span class="tag-live">вопрос в рамке</span></div><div class="frame"></div></div>
+  <div class="sheet">
+    <div class="sect" style="margin-top:0">Из галереи</div>
+    <div class="strip"><div class="cell sel">IMG_2041</div><div class="cell">IMG_2040</div><div class="cell">IMG_2039</div><div class="cell">IMG_2038</div><div class="cell">Все</div></div>
+    <div class="shutterbar"><div class="iconbtn"><svg class="ic"><use href="#i-img"/></svg></div><div class="shutter"></div><div class="iconbtn"><svg class="ic"><use href="#i-check"/></svg></div></div>
+    <div class="sticky" style="margin:8px -18px 0"><div class="cta">Продолжить <svg class="ic"><use href="#i-arrow"/></svg></div></div>
+  </div>
 </div></div></div>
 
 <!-- 03 -->
@@ -216,14 +233,14 @@
     <div class="steps">
       <div class="step done"><svg class="ic sm"><use href="#i-check"/></svg> Текст готов к решению</div>
       <div class="step done"><svg class="ic sm"><use href="#i-check"/></svg> Запрос собран, батч отправлен</div>
-      <div class="step"><svg class="ic sm"><use href="#i-clock"/></svg> Проверка уверенности · порог 0.80</div>
+      <div class="step"><svg class="ic sm"><use href="#i-clock"/></svg> Проверка уверенности · порог 0.75</div>
     </div>
   </div>
   <div class="sticky"><div class="ghost">Повторный вопрос отдаст кэш — мгновенно</div></div>
 </div></div></div>
 
 <!-- 05 -->
-<div><p class="caption"><b>05_result</b> — ответ + разбор без упоминания движка</p>
+<div><p class="caption"><b>05_result</b> — ответ + уведомление при точности ниже 75% и кнопка объяснения</p>
 <div class="phone"><div class="notch"></div><div class="screen">
   <div class="topbar"><div class="back"><svg class="ic sm"><use href="#i-back"/></svg> К тестам</div><div style="display:flex;gap:8px"><div class="iconbtn"><svg class="ic"><use href="#i-copy"/></svg></div><div class="iconbtn"><svg class="ic"><use href="#i-hist"/></svg></div></div></div>
   <div class="ans"><span class="lab">Ответ · 0.4 c</span><b>B — Канберра</b><div class="confbar"><i style="width:94%"></i></div><div class="probs">
@@ -232,15 +249,17 @@
     <div class="prob">C — Мельбурн<b>2%</b></div>
     <div class="prob">D — Перт<b>1%</b></div>
   </div></div>
-  <div class="card"><p class="expl">Канберра — специально построенная столица (1913) как компромисс между Сиднеем и Мельбурном. Уверенность 94% — выше порога 0.80.</p></div>
+  <div class="warn"><h4><svg class="ic sm"><use href="#i-alert"/></svg> Точность ниже 75% — проверьте ответ</h4><p>Сложный вопрос: уверенность 68%. Ниже — подробный разбор по нажатию.</p></div>
+  <div class="explain-btn"><svg class="ic sm"><use href="#i-text"/></svg> Объяснить подробнее</div>
+  <div class="card"><p class="expl">Канберра — специально построенная столица (1913) как компромисс между Сиднеем и Мельбурном. Уверенность 94% — выше порога 0.75.</p></div>
   <div class="actions"><div class="chip"><svg class="ic sm"><use href="#i-copy"/></svg> Копировать</div><div class="chip"><svg class="ic sm"><use href="#i-plus"/></svg> Следующий</div></div>
   <div class="sticky"><div class="cta">Задать уточняющий вопрос</div><div class="ghost">Осталось бесплатно сегодня: 16 из 20</div></div>
 </div></div></div>
 
 <!-- 06 -->
-<div><p class="caption"><b>06_paywall</b> — Veritas PRO: ценность вместо себестоимости</p>
+<div><p class="caption"><b>06_paywall</b> — Apo PRO: ценность вместо себестоимости</p>
 <div class="phone"><div class="notch"></div><div class="screen">
-  <div class="topbar"><div class="logo">Veritas <em>PRO</em></div><div class="iconbtn"><svg class="ic"><use href="#i-back"/></svg></div></div>
+  <div class="topbar"><div class="logo">Apo <em>PRO</em></div><div class="iconbtn"><svg class="ic"><use href="#i-back"/></svg></div></div>
   <div class="card" style="display:flex;gap:10px;align-items:center"><svg class="ic"><use href="#i-bolt"/></svg><p class="expl">Ответы за секунды · разбор каждого ответа · история без срока.</p></div>
   <div class="price"><h3>Free · $0</h3><p>20 решений в день · без разборов и истории</p><div class="sum">$0 <small>/ навсегда</small></div></div>
   <div class="price hot"><h3><svg class="ic sm"><use href="#i-crown"/></svg> База · $1.99/мес</h3><p>200 решений в день · разборы · история 30 дней</p><div class="sum">$1.99 <small>/ месяц</small></div></div>
@@ -252,11 +271,10 @@
 
 <div class="contract">
   <b>Подача и конвертер (единый пайплайн):</b> камера / скриншот / PDF / Word / текст → улучшение изображения →
-  распознавание текста → чистка → разбивка на вопросы → sha256(вопрос+опции) → кэш → решение → проверка уверенности (0.85 принять,
-  0.6–0.85 с пометкой «проверь», ниже — углублённый разбор). Плохое фото отклоняется ДО решения с карточкой ошибки и кнопкой пересъёмки.
+  распознавание текста → чистка → разбивка на вопросы → sha256(вопрос+опции) → кэш → решение → проверка уверенности (ниже 0.75 — уведомление + кнопка «Объяснить подробнее» под каждым тестом, объяснение генерируется по нажатию, кэш по sha256). Плохое фото отклоняется ДО решения с карточкой ошибки и кнопкой пересъёмки.
   Word и PDF идут тем же путём через извлечение текста постранично.<br><br>
   <b>Контракт с движком (Ares) — NATIVE OWNER (Ares): заменить моки на вызовы движка, UI ключи не менять.</b><br>
-  <code>routes: VeritasHome, VeritasCapture, VeritasConvert, VeritasSolving, VeritasResult, Paywall · storage keys: veritas_history_v1, veritas_quota_v1, veritas_sub_v1 (движку принять новые ключи) · engine calls: ingestFile(file) → { text, questions[ ], warnings[ ] }, solveTest(question, options[]) → { answerIndex, confidence[ ], ms, fallback: bool } · порог 0.80</code>
+  <code>routes: ApoHome, ApoCapture, ApoConvert, ApoSolving, ApoResult, Paywall · storage keys: apo_history_v1, apo_quota_v1, apo_sub_v1, apo_explain_cache_v1 (движку принять новые ключи) · engine calls: ingestFile(file) → { text, questions[ ], warnings[ ] }, solveTest(question, options[]) → { answerIndex, confidence[ ], ms, lowAccuracy: bool } · порог 0.75 · explainText(question, answer) по кнопке под каждым тестом, кэш по sha256</code>
 </div>
 
 </body>
