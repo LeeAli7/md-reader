@@ -9,6 +9,12 @@ import FileBrowserScreen from './src/screens/FileBrowserScreen';
 import ReaderScreen from './src/screens/ReaderScreen';
 import EditorScreen from './src/screens/EditorScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import ApoHomeScreen from './src/screens/ApoHomeScreen';
+import ApoCaptureScreen from './src/screens/ApoCaptureScreen';
+import ApoConvertScreen from './src/screens/ApoConvertScreen';
+import ApoSolvingScreen from './src/screens/ApoSolvingScreen';
+import ApoResultScreen from './src/screens/ApoResultScreen';
+import ApoPaywallScreen from './src/screens/ApoPaywallScreen';
 import { initIncomingFileListener } from './src/utils/incomingFile';
 import * as Font from 'expo-font';
 
@@ -75,6 +81,12 @@ export default function App() {
       <ThemeProvider>
         <NavigationContainer ref={navRef}>
           <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+            <Stack.Screen name="ApoHome" component={ApoHomeScreen} />
+            <Stack.Screen name="ApoCapture" component={ApoCaptureScreen} />
+            <Stack.Screen name="ApoConvert" component={ApoConvertScreen} />
+            <Stack.Screen name="ApoSolving" component={ApoSolvingScreen} />
+            <Stack.Screen name="ApoResult" component={ApoResultScreen} />
+            <Stack.Screen name="Paywall" component={ApoPaywallScreen} />
             <Stack.Screen name="Files" component={FileBrowserScreen} />
             <Stack.Screen name="Reader" component={ReaderScreen} />
             <Stack.Screen name="Editor" component={EditorScreen as any} options={{ animation: 'slide_from_bottom' }} />
