@@ -579,6 +579,9 @@ export default function FileBrowserScreen({ navigation }: Props) {
           </View>
         ) : (
           <View style={s.headerActions}>
+            <Pressable onPress={() => navigation.navigate('ApoHome')} style={s.iconBtn}>
+              <Ionicons name="flash-outline" size={22} color={theme.accent} />
+            </Pressable>
             <Pressable onPress={() => { setQuery(''); setScope('files'); setSearchTag(null); setShowSearch(true); }} style={s.iconBtn}>
               <Ionicons name="search-outline" size={22} color={theme.accent} />
             </Pressable>
