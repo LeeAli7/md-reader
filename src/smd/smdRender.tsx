@@ -55,14 +55,14 @@ function SmdMetaHeader({ doc, rt, fontSize }: { doc: SmdDoc; rt: any; fontSize: 
 function BlockView({ block, ctx }: { block: SmdBlock; ctx: Ctx }) {
   switch (block.type) {
     case 'theory':
-      return <Markdown style={ctx.mdStyle}>{block.body}</Markdown>;
+      return <RichText body={block.body} ctx={ctx} />;
     case 'def':
       return (
         <View style={[s.def, { borderLeftColor: '#8B5CF6', backgroundColor: ctx.rt.text + '08' }]}>
           <Text style={[s.defTerm, { color: ctx.rt.text, fontSize: ctx.fontSize * 1.1 }]}>
             {block.term ?? 'Определение'}
           </Text>
-          <Markdown style={ctx.mdStyle}>{block.body}</Markdown>
+          <RichText body={block.body} ctx={ctx} />
         </View>
       );
     case 'formula':
@@ -155,6 +155,36 @@ function CardBlock({ front, back, ctx }: { front: string; back: string; ctx: Ctx
           </Pressable>
         </View>
       )}
+    </View>
+  );
+}
+
+// --- инлайн-подсветка: ==..== и {{cN::..}} внутри theory/def (тап открывает) ---
+
+function RichText({ body, ctx }: { body: string; ctx: Ctx }) {
+  const parts = splitCloze(body);
+  if (!parts.some((p) => p.hidden)) {
+    return <Markdown style={ctx.mdStyle}>{body}</Markdown>;
+  }
+  const [open, setOpen] = useState<number[]>([]);
+  return (
+    <View>
+      <Text style={[s.clozeText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>
+        {parts.map((p, i) => p.hidden ? (
+          <Text
+            key={i}
+            onPress={() => setOpen((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]))}
+            style={open.includes(i)
+              ? { color: '#22C55E', fontWeight: '700' }
+              : { backgroundColor: '#8B5CF633', color: ctx.rt.text }}
+          >
+            {open.includes(i) ? p.text : ' [•••] '}
+          </Text>
+        ) : (
+          <Text key={i}>{p.text}</Text>
+        ))}
+      </Text>
+      <Text style={[s.explain, { color: ctx.rt.text + '50' }]}>тап по выделению — открыть</Text>
     </View>
   );
 }
