@@ -2,7 +2,7 @@
 // Контракт данных: SmdDoc { meta, blocks } (см. smdTypes.ts, парсер — Ares).
 // Интерактив локален (useState на блок): движок/статистика не трогаем.
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, Pressable, StyleSheet, ScrollView, TextInput,
 } from 'react-native';
@@ -307,15 +307,46 @@ function splitCloze(body: string): { text: string; hidden: boolean }[] {
   return out.length > 0 ? out : [{ text: body, hidden: false }];
 }
 
+// --- детерминированный шаффл (seed из вопроса): порядок «как в игре», стабилен ---
+
+function hashStr(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.codePointAt(i) ?? 0;
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+function seededOrder(n: number, seed: string): number[] {
+  let s = hashStr(seed) || 1;
+  const rnd = () => {
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const arr = [...Array(n).keys()];
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  // не оставлять изначально правильный порядок — иначе это подсказка
+  if (n > 1 && arr.every((v, i) => v === i)) [arr[0], arr[1]] = [arr[1], arr[0]];
+  return arr;
+}
+
 // --- quiz: single/multi — кнопки, free/numeric — ввод, match — пары, order — порядок ---
 
 function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>; ctx: Ctx }) {
   const [sel, setSel] = useState<number[]>([]);
   const [free, setFree] = useState('');
   const [checked, setChecked] = useState(false);
-  const [matchSel, setMatchSel] = useState<{ l?: number; r?: number }>({});
-  const [matchPairs, setMatchPairs] = useState<Record<number, number>>({});
+  // match: links[leftIdx] = rightPos; selL — выбранная левая
+  const [selL, setSelL] = useState<number | null>(null);
+  const [links, setLinks] = useState<Record<number, number>>({});
+  // order: порядок позиций + выбранная для обмена
   const [order, setOrder] = useState<number[] | null>(null);
+  const [orderSel, setOrderSel] = useState<number | null>(null);
 
   const opts = block.options ?? [];
   const toggle = (i: number) => {
@@ -345,24 +376,79 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
     if (Number.isNaN(v) || Number.isNaN(a)) return false;
     return Math.abs(v - a) <= (block.tolerance ?? 0);
   })();
-  // match / order
+  // match: правая колонка тасуется (seed из вопроса), связи по индексам
   const pairs = block.pairs ?? [];
-  const matchRights = pairs.map((p) => p.right);
+  const matchRightOrder = useMemo(
+    () => seededOrder(pairs.length, block.question),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [block.question, pairs.length],
+  );
   const matchOk = checked && pairs.length >= 2 &&
-    pairs.every((p, li) => matchRights[matchPairs[li]] === p.right);
+    pairs.every((_, li) => matchRightOrder[links[li]] === li);
+  const unlink = (m: Record<number, number>, pos: number) => {
+    const n: Record<number, number> = {};
+    for (const k of Object.keys(m)) {
+      if (m[Number(k)] !== pos) n[Number(k)] = m[Number(k)];
+    }
+    return n;
+  };
+  const tapLeft = (li: number) => {
+    setChecked(false);
+    if (links[li] !== undefined) {
+      setLinks((prev) => {
+        const n = { ...prev };
+        delete n[li];
+        return n;
+      });
+      if (selL === li) setSelL(null);
+      return;
+    }
+    setSelL((prev) => (prev === li ? null : li));
+  };
+  const tapRight = (pos: number) => {
+    setChecked(false);
+    if (selL === null) {
+      // без выбранной левой — тап по занятой снимает связь
+      setLinks((prev) => unlink(prev, pos));
+      return;
+    }
+    const l = selL;
+    setLinks((prev) => {
+      const n = unlink(prev, pos);
+      n[l] = pos;
+      return n;
+    });
+    setSelL(null);
+  };
+  // order: стартуем перемешанными, тап-тап = обмен (как в игре)
   const orderItems = block.items ?? [];
-  const curOrder = order ?? orderItems.map((_, i) => i);
+  const orderInit = useMemo(
+    () => seededOrder(orderItems.length, `${block.question}#ord`),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [block.question, orderItems.length],
+  );
+  const curOrder = order ?? orderInit;
   const orderOk = checked && orderItems.length >= 2 &&
     curOrder.every((v, pos) => v === pos);
-  const moveOrder = (idx: number, dir: -1 | 1) => {
+  const tapOrder = (pos: number) => {
     setChecked(false);
-    setOrder((prev) => {
-      const arr = [...(prev ?? orderItems.map((_, i) => i))];
-      const j = idx + dir;
-      if (j < 0 || j >= arr.length) return arr;
-      [arr[idx], arr[j]] = [arr[j], arr[idx]];
-      return arr;
-    });
+    if (orderSel === null) {
+      setOrderSel(pos);
+      return;
+    }
+    if (orderSel === pos) {
+      setOrderSel(null);
+      return;
+    }
+    const arr = [...curOrder];
+    [arr[orderSel], arr[pos]] = [arr[pos], arr[orderSel]];
+    setOrder(arr);
+    setOrderSel(null);
+  };
+  const reshuffleOrder = () => {
+    setChecked(false);
+    setOrderSel(null);
+    setOrder(seededOrder(orderItems.length, `${block.question}#${Date.now()}`));
   };
 
   return (
@@ -426,67 +512,120 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
 
       {block.quizType === 'match' && pairs.length >= 2 && (
         <View style={s.matchWrap}>
-          {pairs.map((p, li) => {
-            const selR = matchPairs[li];
-            return (
-              <View key={li} style={s.matchRow}>
-                <Pressable
-                  onPress={() => {
-                    setChecked(false);
-                    setMatchSel((prev) => ({ ...prev, l: li }));
-                    if (matchSel.r !== undefined) {
-                      setMatchPairs((prev) => ({ ...prev, [li]: matchSel.r as number }));
-                      setMatchSel({});
-                    }
-                  }}
-                  style={[s.matchCell, { borderColor: matchSel.l === li ? '#3B82F6' : ctx.rt.text + '25' },
-                    matchSel.l === li && { backgroundColor: '#3B82F622' }]}
-                >
-                  <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>{p.left}</Text>
-                </Pressable>
-                <Text style={{ color: ctx.rt.text + '50' }}>→</Text>
-                <Pressable
-                  onPress={() => {
-                    setChecked(false);
-                    const r = matchRights.indexOf(p.right);
-                    setMatchSel((prev) => ({ ...prev, r }));
-                    if (matchSel.l !== undefined) {
-                      setMatchPairs((prev) => ({ ...prev, [matchSel.l as number]: r }));
-                      setMatchSel({});
-                    } else {
-                      setMatchPairs((prev) => ({ ...prev, [li]: (selR ?? r) }));
-                    }
-                  }}
-                  style={[s.matchCell, { borderColor: ctx.rt.text + '25' }]}
-                >
-                  <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>
-                    {selR !== undefined ? matchRights[selR] : '— выбери —'}
-                  </Text>
-                </Pressable>
-              </View>
-            );
-          })}
-          <Text style={[s.explain, { color: ctx.rt.text + '60' }]}>Тапни левую, потом правую — собери пары</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flex: 1, gap: 8 }}>
+              {pairs.map((p, li) => {
+                const pos = links[li];
+                const verdict = checked && pos !== undefined
+                  ? (matchRightOrder[pos] === li ? true : false) : null;
+                return (
+                  <Pressable
+                    key={li}
+                    onPress={() => tapLeft(li)}
+                    style={[s.matchCell,
+                      { borderColor: ctx.rt.text + '25' },
+                      selL === li && { borderColor: '#3B82F6', backgroundColor: '#3B82F622' },
+                      pos !== undefined && selL !== li && { borderColor: ctx.rt.text + '60' },
+                      verdict === true && { borderColor: '#22C55E', backgroundColor: '#22C55E22' },
+                      verdict === false && { borderColor: '#EF4444', backgroundColor: '#EF444422' },
+                    ]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      {pos !== undefined ? (
+                        <View style={[s.linkBadge, verdict === true
+                          ? { backgroundColor: '#22C55E' }
+                          : verdict === false ? { backgroundColor: '#EF4444' } : { backgroundColor: '#3B82F6' }]}>
+                          <Text style={s.linkBadgeText}>{pos + 1}</Text>
+                        </View>
+                      ) : null}
+                      <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>{p.left}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <View style={{ flex: 1, gap: 8 }}>
+              {matchRightOrder.map((pairIdx, pos) => {
+                const li = Number(Object.keys(links).find((k) => links[Number(k)] === pos));
+                const hasLink = !Number.isNaN(li) && links[li] === pos;
+                const verdict = checked && hasLink
+                  ? (pairIdx === li ? true : false) : null;
+                return (
+                  <Pressable
+                    key={pos}
+                    onPress={() => tapRight(pos)}
+                    style={[s.matchCell,
+                      { borderColor: ctx.rt.text + '25' },
+                      hasLink && { borderColor: ctx.rt.text + '60' },
+                      verdict === true && { borderColor: '#22C55E', backgroundColor: '#22C55E22' },
+                      verdict === false && { borderColor: '#EF4444', backgroundColor: '#EF444422' },
+                    ]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      {hasLink ? (
+                        <View style={[s.linkBadge, verdict === true
+                          ? { backgroundColor: '#22C55E' }
+                          : verdict === false ? { backgroundColor: '#EF4444' } : { backgroundColor: '#3B82F6' }]}>
+                          <Text style={s.linkBadgeText}>{pos + 1}</Text>
+                        </View>
+                      ) : null}
+                      <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>
+                        {pairs[pairIdx]?.right ?? ''}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+          <Text style={[s.explain, { color: ctx.rt.text + '60' }]}>
+            Тапни слева, потом справа — свяжутся одним номером. Повторный тап снимает связь.
+          </Text>
         </View>
       )}
 
       {block.quizType === 'order' && orderItems.length >= 2 && (
         <View style={s.matchWrap}>
           {curOrder.map((itemIdx, pos) => (
-            <View key={pos} style={s.matchRow}>
-              <Text style={[s.orderNum, { color: ctx.rt.text + '80' }]}>{pos + 1}.</Text>
+            <Pressable
+              key={pos}
+              onPress={() => tapOrder(pos)}
+              style={[s.matchRow,
+                orderSel === pos && { borderColor: '#3B82F6', backgroundColor: '#3B82F622', borderWidth: 1, borderRadius: 10, padding: 4 },
+                checked && orderOk && { borderColor: '#22C55E', borderWidth: 1, borderRadius: 10, padding: 4 },
+                checked && !orderOk && { borderColor: '#EF4444', borderWidth: 1, borderRadius: 10, padding: 4 },
+              ]}
+            >
+              <View style={s.orderPos}>
+                <Text style={[s.orderPosText, { color: orderSel === pos ? '#FFF' : ctx.rt.text + '80', backgroundColor: orderSel === pos ? '#3B82F6' : 'transparent' }]}>
+                  {pos + 1}
+                </Text>
+              </View>
               <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize, flex: 1 }]}>
                 {orderItems[itemIdx]}
               </Text>
-              <Pressable onPress={() => moveOrder(pos, -1)} hitSlop={8} style={s.orderBtn}>
-                <Ionicons name="chevron-up" size={20} color={ctx.rt.text + '80'} />
-              </Pressable>
-              <Pressable onPress={() => moveOrder(pos, 1)} hitSlop={8} style={s.orderBtn}>
-                <Ionicons name="chevron-down" size={20} color={ctx.rt.text + '80'} />
-              </Pressable>
-            </View>
+              <Ionicons name="swap-vertical-outline" size={18} color={ctx.rt.text + '40'} />
+            </Pressable>
           ))}
-          <Text style={[s.explain, { color: ctx.rt.text + '60' }]}>Стрелками выставь правильный порядок</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={[s.explain, { color: ctx.rt.text + '60', flex: 1 }]}>
+              Тапни два блока — поменяются местами
+            </Text>
+            <Pressable onPress={reshuffleOrder} hitSlop={8} style={s.miniBtn}>
+              <Ionicons name="shuffle-outline" size={16} color={ctx.rt.text + '80'} />
+              <Text style={{ color: ctx.rt.text + '80', fontSize: 13 }}>Ещё раз</Text>
+            </Pressable>
+          </View>
+          {checked && !orderOk && (
+            <View style={[s.callout, { borderColor: '#22C55E', backgroundColor: '#22C55E14' }]}>
+              <Text style={[s.calloutLabel, { color: '#22C55E' }]}>Правильный порядок</Text>
+              {orderItems.map((t, i) => (
+                <Text key={i} style={{ color: ctx.rt.text, fontSize: ctx.fontSize * 0.92, marginTop: 2 }}>
+                  {i + 1}. {t}
+                </Text>
+              ))}
+            </View>
+          )}
         </View>
       )}
 
@@ -602,18 +741,24 @@ function ChecklistBlock({ items, ctx }: { items: string[]; ctx: Ctx }) {
 
 function CompareTable({ head, rows, ctx }: { head: string[]; rows: string[][]; ctx: Ctx }) {
   const cellBorder = ctx.rt.text + '25';
+  // Защита от кривых источников: режем пустые крайние колонки.
+  let cols = head.map((_, j) => j);
+  const colEmpty = (j: number) =>
+    (head[j] ?? '').trim() === '' && rows.every((r) => (r[j] ?? '').trim() === '');
+  while (cols.length > 1 && colEmpty(cols[0])) cols = cols.slice(1);
+  while (cols.length > 1 && colEmpty(cols[cols.length - 1])) cols = cols.slice(0, -1);
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.cmpWrap}>
-      <View style={[s.cmpTable, { borderColor: cellBorder }]}>
+      <View style={[s.cmpTable, { borderColor: cellBorder, minWidth: '100%' }]}>
         <View style={[s.cmpRow, { backgroundColor: ctx.rt.text + '08' }]}>
-          {head.map((h, i) => (
-            <Text key={i} style={[s.cmpCell, s.cmpHead, { color: ctx.rt.text, borderColor: cellBorder, fontSize: ctx.fontSize * 0.92 }]}>{h}</Text>
+          {cols.map((j) => (
+            <Text key={j} style={[s.cmpCell, s.cmpHead, { flex: 1, color: ctx.rt.text, borderColor: cellBorder, fontSize: ctx.fontSize * 0.92 }]}>{head[j]}</Text>
           ))}
         </View>
         {rows.map((r, i) => (
           <View key={i} style={s.cmpRow}>
-            {head.map((_, j) => (
-              <Text key={j} style={[s.cmpCell, { color: ctx.rt.text, borderColor: cellBorder, fontSize: ctx.fontSize * 0.92 }]}>
+            {cols.map((j) => (
+              <Text key={j} style={[s.cmpCell, { flex: 1, color: ctx.rt.text, borderColor: cellBorder, fontSize: ctx.fontSize * 0.92 }]}>
                 {r[j] ?? ''}
               </Text>
             ))}
@@ -676,6 +821,11 @@ const s = StyleSheet.create({
   matchWrap: { gap: 8, marginTop: 4 },
   matchRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   matchCell: { flex: 1, borderWidth: 1, borderRadius: 10, padding: 10 },
+  linkBadge: { minWidth: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  linkBadgeText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
   orderNum: { fontSize: 14, fontWeight: '700', minWidth: 24 },
+  orderPos: { minWidth: 28, alignItems: 'center', justifyContent: 'center' },
+  orderPosText: { fontSize: 14, fontWeight: '700', minWidth: 26, height: 26, lineHeight: 26, textAlign: 'center', borderRadius: 13, overflow: 'hidden' },
+  miniBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6 },
   orderBtn: { padding: 6 },
 });
