@@ -16,7 +16,7 @@ import { loadReadable } from '../utils/documentLoader';
 import PdfView from '../components/PdfView';
 import { SmdDocView } from '../smd/smdRender';
 import { mockSmdDoc, mockRichDoc, mockPages } from '../smd/smdMock';
-import { parseSmd } from '../smd/smdParser';
+import { parseSmd, smdToc } from '../smd/smdParser';
 import type { SmdDoc, SheetDoc } from '../smd/smdTypes';
 import { useTheme } from '../hooks/useTheme';
 import { readingThemes } from '../theme/tokens';
@@ -215,10 +215,22 @@ const ChunkView = React.memo(function ChunkView({ text, mdStyle, rules }: { text
 });
 
 // Постраничный текст (pptx/odt/epub от Ares): одна страница + навигация.
-function PagesView({ pages, mdStyle, rules, rt }: { pages: string[]; mdStyle: any; rules: any; rt: any }) {
+// Номер страницы переживает выходы/переключения (доля в metaStore).
+function PagesView({ uri, pages, mdStyle, rules, rt }: { uri: string; pages: string[]; mdStyle: any; rules: any; rt: any }) {
   const [idx, setIdx] = useState(0);
   const total = Math.max(1, pages.length);
   const i = Math.min(idx, total - 1);
+  useEffect(() => {
+    let alive = true;
+    getPosition(uri).then((f) => {
+      if (alive && f > 0 && total > 1) setIdx(Math.min(total - 1, Math.round(f * (total - 1))));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [uri]);
+  const go = (n: number) => {
+    setIdx(n);
+    setPosition(uri, total <= 1 ? 0 : n / (total - 1)).catch(() => {});
+  };
   const btn = (disabled: boolean) => ({ opacity: disabled ? 0.3 : 1, padding: 10 });
   return (
     <View style={{ flex: 1 }}>
@@ -227,11 +239,11 @@ function PagesView({ pages, mdStyle, rules, rt }: { pages: string[]; mdStyle: an
       </ScrollView>
       {total > 1 && (
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 6, borderTopWidth: 1, borderTopColor: rt.text + '15', backgroundColor: rt.bg }}>
-          <Pressable onPress={() => setIdx(Math.max(0, i - 1))} disabled={i === 0} style={btn(i === 0)}>
+          <Pressable onPress={() => go(Math.max(0, i - 1))} disabled={i === 0} style={btn(i === 0)}>
             <Ionicons name="chevron-back" size={24} color={rt.text} />
           </Pressable>
           <Text style={{ color: rt.text + '80', fontSize: 13 }}>Стр. {i + 1} / {total}</Text>
-          <Pressable onPress={() => setIdx(Math.min(total - 1, i + 1))} disabled={i === total - 1} style={btn(i === total - 1)}>
+          <Pressable onPress={() => go(Math.min(total - 1, i + 1))} disabled={i === total - 1} style={btn(i === total - 1)}>
             <Ionicons name="chevron-forward" size={24} color={rt.text} />
           </Pressable>
         </View>
@@ -404,8 +416,14 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const lastFrac = useRef<Record<string, number>>({});
   const saveTimer = useRef<any>(null);
   const listRefs = useRef<Record<string, FlatList | null>>({});
+  const richRefs = useRef<Record<string, WebView | null>>({});
   const contentH = useRef<Record<string, number>>({});
   const viewportH = useRef<Record<string, number>>({});
+  // .smd: uri → индекс блока → Y (точные прыжки оглавления).
+  const smdBlockY = useRef<Record<string, Record<number, number>>>({});
+  // Рестор: сохранённая доля + высота, на которой отресторились (рост контента дотягиваем).
+  const restoredFrac = useRef<Record<string, number>>({});
+  const restoredCh = useRef<Record<string, number>>({});
 
   useEffect(() => {
     return () => {
@@ -444,6 +462,8 @@ export default function ReaderScreen({ route, navigation }: Props) {
       restored.current[uri] = rev;
       posMap.current[uri] = 0;
       lastFrac.current[uri] = 0;
+      restoredFrac.current[uri] = 0;
+      restoredCh.current[uri] = ch;
       return;
     }
     restored.current[uri] = rev;
@@ -452,6 +472,8 @@ export default function ReaderScreen({ route, navigation }: Props) {
         const f = await getPosition(uri);
         posMap.current[uri] = f;
         lastFrac.current[uri] = f;
+        restoredFrac.current[uri] = f;
+        restoredCh.current[uri] = ch;
         if (f > 0.005) {
           const y = f * (ch - vh);
           setTimeout(() => {
@@ -604,6 +626,21 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const makeContentSize = (uri: string, chunkCount: number, rev: number) => (_w: number, h: number) => {
     contentH.current[uri] = h;
     tryRestore(uri, chunkCount, rev);
+    // Контент дорос ПОСЛЕ ресторa (картинки, раскладка markdown) — ранний рестор
+    // попал мимо (доля от меньшей высоты). Дотягиваем, если юзер сам не крутил.
+    const rf = restoredFrac.current[uri];
+    const rc = restoredCh.current[uri] ?? 0;
+    if (rf !== undefined && rf > 0.005 && rc > 0 && h > rc * 1.15) {
+      const lf = lastFrac.current[uri] ?? rf;
+      restoredCh.current[uri] = h;
+      if (Math.abs(lf - rf) < 0.02) {
+        const vh = viewportH.current[uri] ?? 0;
+        const y = rf * Math.max(0, h - vh);
+        setTimeout(() => {
+          try { listRefs.current[uri]?.scrollToOffset({ offset: y, animated: false }); } catch {}
+        }, 60);
+      }
+    }
   };
 
   const makeLayout = (uri: string, chunkCount: number, rev: number) => (e: any) => {
@@ -618,11 +655,23 @@ export default function ReaderScreen({ route, navigation }: Props) {
 
   const jumpToHeading = (h: Heading) => {
     setShowTOC(false);
-    let idx = 0;
-    main.chunks.forEach((c, i) => { if (c.start <= h.charIndex) idx = i; });
     setTimeout(() => {
       try {
-        listRefs.current[active.uri]?.scrollToIndex({ index: idx, viewPosition: 0, animated: true });
+        // .smd: точный прыжок по замеренной координате блока.
+        if (h.blockIdx !== undefined && h.blockIdx >= 0) {
+          const y = smdBlockY.current[active.uri]?.[h.blockIdx];
+          if (typeof y === 'number') {
+            listRefs.current[active.uri]?.scrollToOffset({ offset: Math.max(0, y - 60), animated: true });
+            return;
+          }
+        }
+        // md/text/sheet: scrollToIndex на виртуализированном списке падает молча —
+        // едем долей от charIndex (замеров не требует, мимо не бьёт).
+        const len = Math.max(1, main.content.length);
+        const frac = Math.max(0, Math.min(1, h.charIndex / len));
+        const ch = contentH.current[active.uri] ?? 0;
+        const vh = viewportH.current[active.uri] ?? 0;
+        listRefs.current[active.uri]?.scrollToOffset({ offset: frac * Math.max(0, ch - vh), animated: true });
       } catch {}
     }, 100);
   };
@@ -698,7 +747,11 @@ export default function ReaderScreen({ route, navigation }: Props) {
   };
 
   const menuActions: MenuAction[] = [];
-  if (main.headings.length > 0) {
+  // .smd: оглавление из блоков (термины, вопросы, задачи), md/text/sheet — из #.
+  const tocHeadings: Heading[] = main.kind === 'smd' && main.smdDoc
+    ? smdToc(main.smdDoc).map((e: { level: number; title: string; blockIdx: number }) => ({ level: e.level, title: e.title, charIndex: -1, blockIdx: e.blockIdx }))
+    : main.headings;
+  if (tocHeadings.length > 0) {
     menuActions.push({ icon: 'list-outline', label: 'Оглавление', onPress: () => setShowTOC(true) });
   }
   menuActions.push({ icon: 'pencil-outline', label: 'Редактировать', onPress: openEditor });
@@ -748,13 +801,32 @@ export default function ReaderScreen({ route, navigation }: Props) {
       ) : dd.kind === 'rich' ? (
         <View style={{ flex: 1 }}>
           <WebView
+            ref={(r) => { richRefs.current[doc.uri] = r; }}
             originWhitelist={['*']}
             source={{ html: dd.richHtml }}
             style={{ flex: 1, backgroundColor: rt.bg }}
+            injectedJavaScript={`(function(){var last=0;window.addEventListener('scroll',function(){var h=document.documentElement.scrollHeight-window.innerHeight;if(h<=0)return;var f=window.scrollY/h;var n=Date.now();if(n-last>500){last=n;window.ReactNativeWebView.postMessage(JSON.stringify({t:'pos',f:f}));}},{passive:true});})();true;`}
+            onMessage={(e) => {
+              try {
+                const d = JSON.parse(e.nativeEvent.data);
+                if (d && d.t === 'pos' && typeof d.f === 'number') trackScroll(doc.uri, d.f);
+              } catch {}
+            }}
+            onLoadEnd={() => {
+              const wv = richRefs.current[doc.uri];
+              if (!wv) return;
+              getPosition(doc.uri).then((f) => {
+                if (f > 0.005) {
+                  try {
+                    wv.injectJavaScript(`window.scrollTo(0,(${f})*Math.max(0,document.documentElement.scrollHeight-window.innerHeight));true;`);
+                  } catch {}
+                }
+              }).catch(() => {});
+            }}
           />
         </View>
       ) : dd.kind === 'pages' ? (
-        <PagesView key={doc.uri} pages={dd.pages} mdStyle={mdStyle} rules={rules} rt={rt} />
+        <PagesView key={doc.uri} uri={doc.uri} pages={dd.pages} mdStyle={mdStyle} rules={rules} rt={rt} />
       ) : (
       <View
         style={{ flex: 1 }}
@@ -796,7 +868,19 @@ export default function ReaderScreen({ route, navigation }: Props) {
           renderItem={({ item, index }) => {
             if (dd.kind === 'smd') {
               if (index > 0 || !dd.smdDoc) return null;
-              return <SmdDocView doc={dd.smdDoc} mdStyle={mdStyle} rt={rt} fontSize={fontSize} />;
+              return (
+                <SmdDocView
+                  doc={dd.smdDoc}
+                  mdStyle={mdStyle}
+                  rt={rt}
+                  fontSize={fontSize}
+                  onBlockLayout={(i, y) => {
+                    const m = smdBlockY.current[doc.uri] ?? {};
+                    m[i] = y;
+                    smdBlockY.current[doc.uri] = m;
+                  }}
+                />
+              );
             }
             return <ChunkView text={item.text} mdStyle={mdStyle} rules={rules} />;
           }}
@@ -911,7 +995,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
 
       <ReaderTOC
         visible={showTOC}
-        headings={main.headings}
+        headings={tocHeadings}
         theme={theme}
         rtText={rt.text}
         rtBg={rt.bg}

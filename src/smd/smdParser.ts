@@ -504,7 +504,7 @@ function parseQuiz(a: Attrs, body: string, line: number, col: number, warn: (msg
   // Пара match: приоритет '=>/<=/<->'; fallback — ровно одна '→'/'—'.
   // '|' и '::' разделителями НЕ являются (конфликт с card и Q::A).
   function splitPair(t: string): { left: string; right: string } | null {
-    const strong = /^(.+?)\s*(=>|<=|<->)\s*(.+)$/.exec(t);
+    const strong = /^(.+?)\s*(=>|<=|<->|->)\s*(.+)$/.exec(t);
     if (strong) return { left: strong[1].trim(), right: strong[3].trim() };
     const arrows = [...t.matchAll(/[→—]/g)];
     if (arrows.length === 1) {
@@ -752,4 +752,37 @@ export function parseSmdFull(raw: string, uri?: string): SmdParseResult {
   flushPending();
 
   return { doc: { meta, blocks }, warnings };
+}
+
+// --- Оглавление .smd: записи с индексом блока (точный прыжок по onLayout) ---
+export interface SmdTocEntry {
+  level: number;
+  title: string;
+  blockIdx: number;
+}
+export function smdToc(doc: SmdDoc): SmdTocEntry[] {
+  const out: SmdTocEntry[] = [];
+  doc.blocks.forEach((b, i) => {
+    if (b.type === 'theory') {
+      for (const ln of b.body.split('\n')) {
+        const m = /^(#{1,3})\s+(.+)$/.exec(ln.trim());
+        if (m) out.push({ level: m[1].length, title: m[2].trim().slice(0, 80), blockIdx: i });
+      }
+    } else if (b.type === 'summary') {
+      out.push({ level: 1, title: 'Выжимка', blockIdx: i });
+    } else if (b.type === 'def') {
+      out.push({ level: 2, title: (b.term ?? 'Определение').slice(0, 80), blockIdx: i });
+    } else if (b.type === 'theorem') {
+      out.push({ level: 2, title: (b.name ?? 'Теорема').slice(0, 80), blockIdx: i });
+    } else if (b.type === 'quiz') {
+      out.push({ level: 2, title: (b.question || 'Вопрос').split('\n')[0].slice(0, 80), blockIdx: i });
+    } else if (b.type === 'task') {
+      out.push({ level: 2, title: `Задача${b.difficulty ? ` · ${b.difficulty}` : ''}`, blockIdx: i });
+    } else if (b.type === 'spoiler') {
+      out.push({ level: 3, title: (b.title ?? 'Спойлер').slice(0, 80), blockIdx: i });
+    } else if (b.type === 'checklist') {
+      out.push({ level: 2, title: 'Самопроверка', blockIdx: i });
+    }
+  });
+  return out;
 }

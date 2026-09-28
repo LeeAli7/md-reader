@@ -16,13 +16,18 @@ interface Ctx {
   fontSize: number;
 }
 
-export function SmdDocView({ doc, mdStyle, rt, fontSize }: { doc: SmdDoc; mdStyle: any; rt: any; fontSize: number }) {
+export function SmdDocView({ doc, mdStyle, rt, fontSize, onBlockLayout }: { doc: SmdDoc; mdStyle: any; rt: any; fontSize: number; onBlockLayout?: (index: number, y: number) => void }) {
   const ctx: Ctx = { mdStyle, rt, fontSize };
   return (
     <View>
       <SmdMetaHeader doc={doc} rt={rt} fontSize={fontSize} />
       {doc.blocks.map((b, i) => (
-        <BlockView key={i} block={b} ctx={ctx} />
+        <View
+          key={i}
+          onLayout={onBlockLayout ? (e) => onBlockLayout(i, e.nativeEvent.layout.y) : undefined}
+        >
+          <BlockView block={b} ctx={ctx} />
+        </View>
       ))}
     </View>
   );
@@ -512,72 +517,63 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
 
       {block.quizType === 'match' && pairs.length >= 2 && (
         <View style={s.matchWrap}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <View style={{ flex: 1, gap: 8 }}>
-              {pairs.map((p, li) => {
-                const pos = links[li];
-                const verdict = checked && pos !== undefined
-                  ? (matchRightOrder[pos] === li ? true : false) : null;
-                return (
-                  <Pressable
-                    key={li}
-                    onPress={() => tapLeft(li)}
-                    style={[s.matchCell,
-                      { borderColor: ctx.rt.text + '25' },
-                      selL === li && { borderColor: '#3B82F6', backgroundColor: '#3B82F622' },
-                      pos !== undefined && selL !== li && { borderColor: ctx.rt.text + '60' },
-                      verdict === true && { borderColor: '#22C55E', backgroundColor: '#22C55E22' },
-                      verdict === false && { borderColor: '#EF4444', backgroundColor: '#EF444422' },
-                    ]}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      {pos !== undefined ? (
-                        <View style={[s.linkBadge, verdict === true
-                          ? { backgroundColor: '#22C55E' }
-                          : verdict === false ? { backgroundColor: '#EF4444' } : { backgroundColor: '#3B82F6' }]}>
-                          <Text style={s.linkBadgeText}>{pos + 1}</Text>
-                        </View>
-                      ) : null}
-                      <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>{p.left}</Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <View style={{ flex: 1, gap: 8 }}>
-              {matchRightOrder.map((pairIdx, pos) => {
-                const li = Number(Object.keys(links).find((k) => links[Number(k)] === pos));
-                const hasLink = !Number.isNaN(li) && links[li] === pos;
-                const verdict = checked && hasLink
-                  ? (pairIdx === li ? true : false) : null;
-                return (
-                  <Pressable
-                    key={pos}
-                    onPress={() => tapRight(pos)}
-                    style={[s.matchCell,
-                      { borderColor: ctx.rt.text + '25' },
-                      hasLink && { borderColor: ctx.rt.text + '60' },
-                      verdict === true && { borderColor: '#22C55E', backgroundColor: '#22C55E22' },
-                      verdict === false && { borderColor: '#EF4444', backgroundColor: '#EF444422' },
-                    ]}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      {hasLink ? (
-                        <View style={[s.linkBadge, verdict === true
-                          ? { backgroundColor: '#22C55E' }
-                          : verdict === false ? { backgroundColor: '#EF4444' } : { backgroundColor: '#3B82F6' }]}>
-                          <Text style={s.linkBadgeText}>{pos + 1}</Text>
-                        </View>
-                      ) : null}
-                      <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>
-                        {pairs[pairIdx]?.right ?? ''}
-                      </Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
+          {matchRightOrder.map((pairIdx, pos) => {
+            // Строка: левая в исходном порядке, правая тасованная — высоты всегда равны.
+            const li = pos;
+            const linkPos = links[li];
+            const leftVerdict = checked && linkPos !== undefined
+              ? (matchRightOrder[linkPos] === li ? true : false) : null;
+            const rightVerdict = checked && linkPos === pos
+              ? (pairIdx === li ? true : false) : null;
+            const badge = linkPos !== undefined ? linkPos + 1 : null;
+            return (
+              <View key={pos} style={s.matchRow}>
+                <Pressable
+                  onPress={() => tapLeft(li)}
+                  style={[s.matchCell,
+                    { borderColor: ctx.rt.text + '25' },
+                    selL === li && { borderColor: '#3B82F6', backgroundColor: '#3B82F622' },
+                    linkPos !== undefined && selL !== li && { borderColor: ctx.rt.text + '60' },
+                    leftVerdict === true && { borderColor: '#22C55E', backgroundColor: '#22C55E22' },
+                    leftVerdict === false && { borderColor: '#EF4444', backgroundColor: '#EF444422' },
+                  ]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {badge !== null ? (
+                      <View style={[s.linkBadge, leftVerdict === true
+                        ? { backgroundColor: '#22C55E' }
+                        : leftVerdict === false ? { backgroundColor: '#EF4444' } : { backgroundColor: '#3B82F6' }]}>
+                        <Text style={s.linkBadgeText}>{badge}</Text>
+                      </View>
+                    ) : null}
+                    <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>{pairs[li]?.left ?? ''}</Text>
+                  </View>
+                </Pressable>
+                <Pressable
+                  onPress={() => tapRight(pos)}
+                  style={[s.matchCell,
+                    { borderColor: ctx.rt.text + '25' },
+                    linkPos === pos && { borderColor: ctx.rt.text + '60' },
+                    rightVerdict === true && { borderColor: '#22C55E', backgroundColor: '#22C55E22' },
+                    rightVerdict === false && { borderColor: '#EF4444', backgroundColor: '#EF444422' },
+                  ]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {linkPos === pos ? (
+                      <View style={[s.linkBadge, rightVerdict === true
+                        ? { backgroundColor: '#22C55E' }
+                        : rightVerdict === false ? { backgroundColor: '#EF4444' } : { backgroundColor: '#3B82F6' }]}>
+                        <Text style={s.linkBadgeText}>{badge}</Text>
+                      </View>
+                    ) : null}
+                    <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>
+                      {pairs[pairIdx]?.right ?? ''}
+                    </Text>
+                  </View>
+                </Pressable>
+              </View>
+            );
+          })}
           <Text style={[s.explain, { color: ctx.rt.text + '60' }]}>
             Тапни слева, потом справа — свяжутся одним номером. Повторный тап снимает связь.
           </Text>
@@ -748,24 +744,22 @@ function CompareTable({ head, rows, ctx }: { head: string[]; rows: string[][]; c
   while (cols.length > 1 && colEmpty(cols[0])) cols = cols.slice(1);
   while (cols.length > 1 && colEmpty(cols[cols.length - 1])) cols = cols.slice(0, -1);
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.cmpWrap}>
-      <View style={[s.cmpTable, { borderColor: cellBorder, minWidth: '100%' }]}>
-        <View style={[s.cmpRow, { backgroundColor: ctx.rt.text + '08' }]}>
-          {cols.map((j) => (
-            <Text key={j} style={[s.cmpCell, s.cmpHead, { flex: 1, color: ctx.rt.text, borderColor: cellBorder, fontSize: ctx.fontSize * 0.92 }]}>{head[j]}</Text>
-          ))}
-        </View>
-        {rows.map((r, i) => (
-          <View key={i} style={s.cmpRow}>
-            {cols.map((j) => (
-              <Text key={j} style={[s.cmpCell, { flex: 1, color: ctx.rt.text, borderColor: cellBorder, fontSize: ctx.fontSize * 0.92 }]}>
-                {r[j] ?? ''}
-              </Text>
-            ))}
-          </View>
+    <View style={[s.cmpTable, { borderColor: cellBorder, marginVertical: 8 }]}>
+      <View style={[s.cmpRow, { backgroundColor: ctx.rt.text + '08' }]}>
+        {cols.map((j) => (
+          <Text key={j} style={[s.cmpCell, s.cmpHead, { flex: 1, color: ctx.rt.text, borderColor: cellBorder, fontSize: ctx.fontSize * 0.85 }]}>{head[j]}</Text>
         ))}
       </View>
-    </ScrollView>
+      {rows.map((r, i) => (
+        <View key={i} style={s.cmpRow}>
+          {cols.map((j) => (
+            <Text key={j} style={[s.cmpCell, { flex: 1, color: ctx.rt.text, borderColor: cellBorder, fontSize: ctx.fontSize * 0.85 }]}>
+              {r[j] ?? ''}
+            </Text>
+          ))}
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -815,7 +809,7 @@ const s = StyleSheet.create({
   cmpWrap: { marginVertical: 8 },
   cmpTable: { borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
   cmpRow: { flexDirection: 'row' },
-  cmpCell: { minWidth: 110, maxWidth: 220, padding: 8, borderRightWidth: 1, borderBottomWidth: 0.5 },
+  cmpCell: { flex: 1, minWidth: 0, padding: 8, borderRightWidth: 1, borderBottomWidth: 0.5 },
   cmpHead: { fontWeight: '700' },
   clozeText: { lineHeight: 24 },
   matchWrap: { gap: 8, marginTop: 4 },

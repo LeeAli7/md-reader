@@ -7,6 +7,7 @@ export interface Heading {
   level: number;
   title: string;
   charIndex: number;
+  blockIdx?: number;
 }
 
 interface Props {
