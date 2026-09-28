@@ -52,6 +52,38 @@ function SmdMetaHeader({ doc, rt, fontSize }: { doc: SmdDoc; rt: any; fontSize: 
   );
 }
 
+// --- формулы текстом: $..$ → читаемый вид (без KaTeX, офлайн) ---
+
+const TEX_CMD: Record<string, string> = {
+  to: '→', rightarrow: '→', leftarrow: '←', times: '×', cdot: '·', pm: '±',
+  leq: '≤', geq: '≥', neq: '≠', approx: '≈', infty: '∞', alpha: 'α', beta: 'β',
+  gamma: 'γ', delta: 'δ', Delta: 'Δ', pi: 'π', mu: 'μ', lambda: 'λ', sigma: 'σ', omega: 'ω',
+};
+const SUB: Record<string, string> = {
+  '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
+  a: 'ₐ', e: 'ₑ', o: 'ₒ', x: 'ₓ', h: 'ₕ', k: 'ₖ', l: 'ₗ', m: 'ₘ', n: 'ₙ', p: 'ₚ', s: 'ₛ', t: 'ₜ',
+  '+': '₊', '-': '₋', '(': '₍', ')': '₎',
+};
+const SUP: Record<string, string> = {
+  '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+  '+': '⁺', '-': '⁻', n: 'ⁿ', i: 'ⁱ',
+};
+function texToText(s: string): string {
+  let o = s.replace(/\\\\/g, '\\');
+  o = o.replace(/\\xrightarrow\{([^}]*)\}/g, '→');
+  o = o.replace(/\\([a-zA-Z]+)/g, (m, c) => TEX_CMD[c] ?? m);
+  o = o.replace(/_\{([^}]+)\}/g, (_, g) => [...g].map((ch: string) => SUB[ch] ?? ch).join(''));
+  o = o.replace(/\^\{([^}]+)\}/g, (_, g) => [...g].map((ch: string) => SUP[ch] ?? ch).join(''));
+  o = o.replace(/_([0-9a-zA-Z+\-()])/g, (_, c) => SUB[c] ?? `_${c}`);
+  o = o.replace(/\^([0-9n+\-])/g, (_, c) => SUP[c] ?? `^${c}`);
+  return o;
+}
+// $..$ → читаемо, только если внутри похоже на формулу (иначе цены "$5 и $10" не трогаем).
+function prettifySpans(body: string): string {
+  return body.replace(/\$([^$\n]+)\$/g, (m, inner) =>
+    /[\\_^]/.test(inner) || /[A-Za-z]_\d/.test(inner) ? texToText(inner) : m);
+}
+
 function BlockView({ block, ctx }: { block: SmdBlock; ctx: Ctx }) {
   switch (block.type) {
     case 'theory':
@@ -68,7 +100,19 @@ function BlockView({ block, ctx }: { block: SmdBlock; ctx: Ctx }) {
     case 'formula':
       return (
         <View style={[s.formula, { backgroundColor: ctx.rt.text + '0A', borderColor: ctx.rt.text + '20' }]}>
-          <Text style={[s.formulaText, { color: ctx.rt.text }]} selectable>{block.body}</Text>
+          <Text style={[s.formulaText, { color: ctx.rt.text }]} selectable>{texToText(block.body.replace(/\$/g, ''))}</Text>
+        </View>
+      );
+    case 'task':
+      return (
+        <View style={[s.card, { borderColor: '#F59E0B88', backgroundColor: '#F59E0B0D' }]}>
+          <View style={s.cardHead}>
+            <Ionicons name="pencil-outline" size={16} color="#F59E0B" />
+            <Text style={[s.cardLabel, { color: '#F59E0B' }]}>
+              Задача{block.difficulty ? ` · сложность ${block.difficulty}` : ''}{block.points ? ` · ${block.points} б.` : ''}
+            </Text>
+          </View>
+          <RichText body={prettifySpans(block.body)} ctx={ctx} />
         </View>
       );
     case 'spoiler':
@@ -139,7 +183,7 @@ function Reveal({ title, body, icon, ctx }: { title: string; body: string; icon:
       </Pressable>
       {open && (
         <View style={s.revealBody}>
-          <Markdown style={ctx.mdStyle}>{body}</Markdown>
+          <Markdown style={ctx.mdStyle}>{prettifySpans(body)}</Markdown>
         </View>
       )}
     </View>
@@ -152,7 +196,7 @@ function CardBlock({ front, back, ctx }: { front: string; back: string; ctx: Ctx
   const [flipped, setFlipped] = useState(false);
   const [mark, setMark] = useState<'know' | 'dont' | null>(null);
   return (
-    <View style={[s.card, { borderColor: ctx.rt.text + '25', backgroundColor: ctx.rt.text + '05' }]}>
+    <View style={[s.card, { borderColor: ctx.rt.text + '25', backgroundColor: ctx.rt.text + '05', minHeight: 150, justifyContent: 'center' }]}>
       <View style={s.cardHead}>
         <Ionicons name="layers-outline" size={16} color={ctx.rt.text + '80'} />
         <Text style={[s.cardLabel, { color: ctx.rt.text + '80' }]}>Карточка</Text>
@@ -163,10 +207,10 @@ function CardBlock({ front, back, ctx }: { front: string; back: string; ctx: Ctx
         )}
       </View>
       <Pressable onPress={() => setFlipped(!flipped)}>
-        <Text style={[s.cardText, { color: ctx.rt.text, fontSize: ctx.fontSize * 1.05 }]}>
+        <Text style={[s.cardText, { color: ctx.rt.text, fontSize: ctx.fontSize * 1.15, textAlign: 'center', fontWeight: flipped ? '400' : '700' }]}>
           {flipped ? back : front}
         </Text>
-        {!flipped && <Text style={[s.revealHint, { color: ctx.rt.text + '60' }]}>тап — ответ</Text>}
+        {!flipped && <Text style={[s.revealHint, { color: ctx.rt.text + '60', textAlign: 'center' }]}>тап — ответ</Text>}
       </Pressable>
       {flipped && (
         <View style={s.cardBtns}>
@@ -191,9 +235,10 @@ function CardBlock({ front, back, ctx }: { front: string; back: string; ctx: Ctx
 // --- инлайн-подсветка: ==..== и {{cN::..}} внутри theory/def (тап открывает) ---
 
 function RichText({ body, ctx }: { body: string; ctx: Ctx }) {
-  const parts = splitCloze(body);
+  const pretty = prettifySpans(body);
+  const parts = splitCloze(pretty);
   if (!parts.some((p) => p.hidden)) {
-    return <Markdown style={ctx.mdStyle}>{body}</Markdown>;
+    return <Markdown style={ctx.mdStyle}>{pretty}</Markdown>;
   }
   const [open, setOpen] = useState<number[]>([]);
   return (

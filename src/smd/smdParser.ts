@@ -380,10 +380,8 @@ function fenceToBlocks(f: Fence, warn: (msg: string, col?: number) => void): Smd
       }
       const fwd = pair.front.replace(/^(прямо|front)\s*:\s*/i, '').trim();
       const bwd = pair.back.replace(/^(обратно|back)\s*:\s*/i, '').trim();
-      return [
-        { type: 'card', front: fwd || pair.front, back: bwd || pair.back },
-        { type: 'card', front: bwd || pair.back, back: fwd || pair.front },
-      ];
+      // Одна двусторонняя карточка (переворот даёт оба направления).
+      return [{ type: 'card', front: fwd || pair.front, back: bwd || pair.back }];
     }
     case 'occlude': {
       const src = attrStr(a, 'src') ?? '';
@@ -401,13 +399,15 @@ function fenceToBlocks(f: Fence, warn: (msg: string, col?: number) => void): Smd
       const { text, solutions } = extractSolutions(body, warn);
       const diff = attrStr(a, 'difficulty');
       const pts = attrStr(a, 'points');
-      const prefix = diff || pts
-        ? `*Задача${diff ? ` · сложность ${diff}` : ''}${pts ? ` · ${pts} б.` : ''}*\n\n`
-        : '';
       const out: SmdBlock[] = [];
-      if (text.trim()) out.push({ type: 'theory', ...(id ? { id } : {}), body: prefix + text.trim() });
+      if (text.trim()) out.push({
+        type: 'task',
+        ...(diff ? { difficulty: diff } : {}),
+        ...(pts ? { points: pts } : {}),
+        body: text.trim(),
+      });
       for (const s of solutions) out.push({ type: 'solution', body: s });
-      if (out.length === 0) return [{ type: 'theory', body }];
+      if (out.length === 0) return [{ type: 'task', body }];
       return out;
     }
     case 'callout': {
@@ -501,13 +501,24 @@ function parseQuiz(a: Attrs, body: string, line: number, col: number, warn: (msg
     }];
   }
 
-  // --- match: строки "лево => право" (или «|», «::», «—») ---
+  // Пара match: приоритет '=>/<=/<->'; fallback — ровно одна '→'/'—'.
+  // '|' и '::' разделителями НЕ являются (конфликт с card и Q::A).
+  function splitPair(t: string): { left: string; right: string } | null {
+    const strong = /^(.+?)\s*(=>|<=|<->)\s*(.+)$/.exec(t);
+    if (strong) return { left: strong[1].trim(), right: strong[3].trim() };
+    const arrows = [...t.matchAll(/[→—]/g)];
+    if (arrows.length === 1) {
+      const i = arrows[0].index ?? -1;
+      if (i >= 0) return { left: t.slice(0, i).trim(), right: t.slice(i + 1).trim() };
+    }
+    return null;
+  }
   if (attrType === 'match') {
     const pairs: { left: string; right: string }[] = [];
     for (const t of qLines) {
       const s = t.replace(/^\s*[-*+]\s+/, '').replace(/^\s*\d+[.)]\s+/, '').trim();
-      const m = /^(.+?)\s*(=>|<=|<->|→|—|\s\|\s|::)\s*(.+)$/.exec(s);
-      if (m) pairs.push({ left: m[1].trim(), right: m[3].trim() });
+      const pr = splitPair(s);
+      if (pr) pairs.push(pr);
     }
     if (pairs.length >= 2) {
       // вопрос — первая строка без разделителя (если есть), иначе дефолт.
@@ -518,13 +529,21 @@ function parseQuiz(a: Attrs, body: string, line: number, col: number, warn: (msg
     // одиночная match-строка без пар — фолбэк ниже.
   }
 
-  // --- order: нумерованные/маркированные строки = правильный порядок ---
+  // --- order: первая НЕ-списочная строка — вопрос (в шаги не входит),
+  // иначе все строки — шаги, вопрос по умолчанию (как Python-эталон) ---
   if (attrType === 'order') {
-    const items = qLines
+    const isList = (s: string) => /^\s*([-*+]\s+|\d+[.)]\s+)/.test(s);
+    let question = 'Восстанови порядок';
+    let rest = qLines;
+    if (qLines.length > 0 && !isList(qLines[0])) {
+      question = qLines[0].trim() || question;
+      rest = qLines.slice(1);
+    }
+    const items = rest
       .map((t) => t.replace(/^\s*[-*+]\s+/, '').replace(/^\s*\d+[.)]\s+/, '').trim())
       .filter(Boolean);
     if (items.length >= 2) {
-      return [{ type: 'quiz', quizType: 'order', question: qText.split('\n')[0]?.trim() || 'Восстанови порядок', items, ...ex, points }];
+      return [{ type: 'quiz', quizType: 'order', question, items, ...ex, points }];
     }
     warn(`:::quiz order без списка шагов (строка ${line}) — показан как есть`, col);
     return [{ type: 'unknown', rawType: 'quiz', body }];
