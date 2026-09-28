@@ -7,15 +7,17 @@
 // (блочный `> [!SPOILER]` и инлайн `[!SPOILER ..]` — инлайн остаётся в теле),
 // заголовки/списки/код/$math$ (сохраняются как markdown внутри theory).
 //
-// Типы SPEC без слота в SmdBlock маппятся fail-open (по SPEC неизвестное →
-// theory): theorem/proof/example/summary/meta-links → theory (с подписью),
-// figure/occlude → theory с ![alt](src), card-bi → две card,
-// numeric/match/order → quiz с quizType, task → theory + solution.
+// Типы SPEC маппятся: theorem/proof/summary/meta-links — свои типы SmdBlock
+// (proof.for и ссылки meta-links сохраняются для навигации), example/
+// figure/occlude → theory (fail-open: лицо рисует markdown/картинку),
+// card-bi → две card, numeric/match/order → quiz с quizType,
+// task → theory + solution. Неизвестный type → unknown + warning.
 
 import type { SmdBlock, SmdDoc, SmdMeta } from './smdTypes';
 
 export interface SmdParseWarning {
   line?: number;
+  col?: number;
   message: string;
 }
 
@@ -65,6 +67,22 @@ function splitListValue(v: string): string[] {
   return out;
 }
 
+function stripInlineComment(v: string): string {
+  // Обрезать ' # комментарий' вне кавычек (YAML-комментарий после значения).
+  let q: string | null = null;
+  for (let i = 0; i < v.length; i++) {
+    const c = v[i];
+    if (q) {
+      if (c === q) q = null;
+    } else if (c === '"' || c === "'") {
+      q = c;
+    } else if (c === '#' && i > 0 && /\s/.test(v[i - 1])) {
+      return v.slice(0, i).trimEnd();
+    }
+  }
+  return v;
+}
+
 function parseFrontmatter(raw: string): Record<string, string | string[]> {
   const fm: Record<string, string | string[]> = {};
   let lastKey: string | null = null;
@@ -73,7 +91,7 @@ function parseFrontmatter(raw: string): Record<string, string | string[]> {
     if (mList && lastKey) {
       const prev = fm[lastKey];
       const arr = Array.isArray(prev) ? prev : [];
-      arr.push(stripQuotes(mList[1]));
+      arr.push(stripQuotes(stripInlineComment(mList[1])));
       fm[lastKey] = arr;
       continue;
     }
@@ -81,7 +99,7 @@ function parseFrontmatter(raw: string): Record<string, string | string[]> {
     if (ci <= 0) continue;
     const key = line.slice(0, ci).trim();
     if (!key || /^\s/.test(line) && lastKey && !/^[\w-]+$/.test(key)) continue;
-    const val = line.slice(ci + 1).trim();
+    const val = stripInlineComment(line.slice(ci + 1).trim());
     lastKey = key;
     if (val === '' || val === 'null' || val === '~') {
       fm[key] = '';
@@ -186,24 +204,58 @@ interface Fence {
   attrs: Attrs;
   body: string;
   line: number;
+  col: number;
+}
+
+interface ProofRef {
+  ref: string;
+  line: number;
+  col: number;
 }
 
 // --- Q::A ---
 
-const QA_LINE_RE = /^(.+?)::\s*(.+?)\s*$/;
+const QA_LINE_RE = /^(.+?)::(.+)$/;
+const QA_ESC = '\u0000';
+const QA_LIST_RE = /^(\s*[-*+]\s+|\s*\d+[.)]\s+)(.*)$/;
+const QA_SKIP_PREFIX_RE = /^\s*(#{1,6}\s+|>\s*|```|\||\s*\d+[.)]\s+)/;
+const QA_CODE_SCOPE_RE = /^\w+::\w/;
+const QA_CODE_CHARS_RE = /[<>(){};\[\]#]/;
 
 function tryQA(line: string): { q: string; a: string } | null {
   const s = line.trim();
-  if (!s || s.includes('$') || s.includes('://')) return null; // формулы и ссылки не трогаем
-  if (/^\s*(#{1,6}\s|>\s*|```|\||\s*[-*+]\s+\[|\s*\d+[.)]\s+)/.test(line)) return null;
-  const m = QA_LINE_RE.exec(s);
+  if (!s || !s.includes('::')) return null;
+  if (s.includes('://')) return null; // ссылки не трогаем
+  if (s.includes('{{') || s.includes('}}')) return null;
+  if (s.includes('`')) return null; // инлайн-код (`a == b`) — не Q::A/cloze
+  if (QA_SKIP_PREFIX_RE.test(line)) return null;
+  if (/^\s*[-*]\s*\[[ xX]\]\s*/.test(line)) return null; // чекбоксы quiz
+  // C++-скоупы: std::vector<int>, std::vector (слово::слово + кодовые символы
+  // либо повторный :: без пробелов — не пара Вопрос::Ответ).
+  if (QA_CODE_SCOPE_RE.test(s) && QA_CODE_CHARS_RE.test(s)) return null;
+  if (/^\w+::\w+$/.test(s)) return null; // голый std::vector
+  // '- Термин::Опр' — маркер списка срезается, front без дефиса.
+  let work = s;
+  const lm = QA_LIST_RE.exec(s);
+  if (lm) {
+    work = (lm[2] ?? '').trim();
+    if (!work || !work.includes('::')) return null;
+    if (/^\s*[-*]\s*\[[ xX]\]\s*/.test(work)) return null;
+  }
+  // Экранирование \:: — не разделитель.
+  work = work.replace(/\\::/g, QA_ESC);
+  if (work.includes('://')) return null;
+  const m = QA_LINE_RE.exec(work);
   if (!m) return null;
-  let q = m[1].trim();
-  const a = m[2].trim();
+  const rawQ = m[1].trim();
+  let q = rawQ.replace(new RegExp(QA_ESC, 'g'), '::');
+  const a = m[2].trim().replace(new RegExp(QA_ESC, 'g'), '::');
   if (!q || !a) return null;
-  if (q.includes('://')) return null; // ссылки (http://) не трогаем
-  q = q.replace(/\\::/g, '::');
-  if (q.includes('::')) return null;
+  if (rawQ.replace(new RegExp(QA_ESC, 'g'), '').includes('::')) return null; // второй :: в вопросе
+  if (q.includes('://') || a.includes('://')) return null;
+  // '$5 и $10' — цены, не повод; '$' в вопросе блокирует (формула),
+  // '$' в ответе разрешён: 'Формула::$E=mc^2$' — валидная Q::A.
+  if (q.includes('$') || q.includes('{{') || q.includes('}}') || q.includes('`')) return null;
   return { q, a };
 }
 
@@ -211,8 +263,8 @@ function splitCard(text: string): { front: string; back: string } | null {
   // "Вопрос | Ответ" (пробелы вокруг | обязательны) либо Q::A.
   const bar = text.search(/\s\|\s/);
   if (bar >= 0) {
-    const front = text.slice(0, bar).trim();
-    const back = text.slice(bar).replace(/^\s*\|\s*/, '').trim();
+    const front = text.slice(0, bar).trim().replace(/\\::/g, '::');
+    const back = text.slice(bar).replace(/^\s*\|\s*/, '').trim().replace(/\\::/g, '::');
     if (front && back) return { front, back };
   }
   const qa = tryQA(text);
@@ -253,7 +305,7 @@ function stripListMarker(line: string): string {
 
 // --- fence → SmdBlock[] ---
 
-function fenceToBlocks(f: Fence, warn: (msg: string) => void): SmdBlock[] {
+function fenceToBlocks(f: Fence, warn: (msg: string, col?: number) => void): SmdBlock[] {
   const type = f.type.toLowerCase();
   const a = f.attrs;
   const body = f.body.trim();
@@ -270,16 +322,14 @@ function fenceToBlocks(f: Fence, warn: (msg: string) => void): SmdBlock[] {
       }
       return [{ type: 'def', ...(term ? { term } : {}), body }];
     }
-    case 'theorem':
-      return [{
-        type: 'theory', ...(id ? { id } : {}),
-        body: `**Теорема${attrStr(a, 'name') ? ` · ${attrStr(a, 'name')}` : ''}**\n\n${body}`,
-      }];
-    case 'proof':
-      return [{
-        type: 'theory',
-        body: `**Доказательство${attrStr(a, 'for') ? ` (к ${attrStr(a, 'for')})` : ''}**\n\n${body}`,
-      }];
+    case 'theorem': {
+      const name = attrStr(a, 'name');
+      return [{ type: 'theorem', ...(id ? { id } : {}), ...(name ? { name } : {}), body }];
+    }
+    case 'proof': {
+      const forId = attrStr(a, 'for');
+      return [{ type: 'proof', ...(forId ? { for: forId } : {}), body }];
+    }
     case 'example':
       return [{ type: 'theory', ...(id ? { id } : {}), body: `**Пример**\n\n${body}` }];
     case 'formula':
@@ -345,7 +395,7 @@ function fenceToBlocks(f: Fence, warn: (msg: string) => void): SmdBlock[] {
       }];
     }
     case 'quiz':
-      return parseQuiz(a, body, f.line, warn);
+      return parseQuiz(a, body, f.line, f.col, warn);
     case 'task': {
       // solution только внутри task — вынимаем вложенный :::solution.
       const { text, solutions } = extractSolutions(body, warn);
@@ -361,18 +411,29 @@ function fenceToBlocks(f: Fence, warn: (msg: string) => void): SmdBlock[] {
       return out;
     }
     case 'callout': {
-      const kind = (attrStr(a, 'kind') ?? 'mistake') as 'mistake' | 'exam-tip' | 'intuition';
-      return [{ type: 'callout', kind, body }];
+      const rawKind = attrStr(a, 'kind') ?? 'mistake';
+      if (rawKind !== 'mistake' && rawKind !== 'exam-tip' && rawKind !== 'intuition') {
+        warn(`:::callout: неизвестный kind "${rawKind}" — взят "mistake"`, f.col);
+        return [{ type: 'callout', kind: 'mistake', body }];
+      }
+      return [{ type: 'callout', kind: rawKind as 'mistake' | 'exam-tip' | 'intuition', body }];
     }
     case 'summary':
-      return [{ type: 'theory', body }];
+      return [{ type: 'summary', body }];
     case 'checklist': {
       const items = body.split('\n').map((l) => stripListMarker(l)).map((s) => s.trim()).filter(Boolean);
       if (items.length === 0) return [{ type: 'theory', body }];
       return [{ type: 'checklist', items }];
     }
-    case 'meta-links':
-      return [{ type: 'theory', body }];
+    case 'meta-links': {
+      const links: { text: string; href: string }[] = [];
+      for (const ln of body.split('\n')) {
+        const t = ln.trim().replace(/^(\s*[-*+]\s+|\s*\d+[.)]\s+)/, '').trim();
+        const m = /^\[(.+?)\]\((.+?)\)/.exec(t);
+        if (m) links.push({ text: m[1].trim(), href: m[2].trim() });
+      }
+      return [{ type: 'meta-links', links, body }];
+    }
     default:
       // Неизвестный type → fail-open: показываем тело, лицо помечает тип.
       warn(`неизвестный тип блока :::${f.type} (строка ${f.line}) — показан как есть`);
@@ -380,7 +441,7 @@ function fenceToBlocks(f: Fence, warn: (msg: string) => void): SmdBlock[] {
   }
 }
 
-function parseQuiz(a: Attrs, body: string, line: number, warn: (msg: string) => void): SmdBlock[] {
+function parseQuiz(a: Attrs, body: string, line: number, col: number, warn: (msg: string, col?: number) => void): SmdBlock[] {
   const attrType = (attrStr(a, 'type') ?? '').toLowerCase();
   const lines = body.split('\n');
   const options: { text: string; correct: boolean }[] = [];
@@ -429,7 +490,7 @@ function parseQuiz(a: Attrs, body: string, line: number, warn: (msg: string) => 
   // --- numeric: :::quiz{type="numeric"} + "> answer: 6 | tol: 0 | unit: ..." ---
   if (attrType === 'numeric') {
     if (answer === undefined) {
-      warn(`:::quiz numeric без answer (строка ${line}) — показан как есть`);
+      warn(`:::quiz numeric без answer (строка ${line}) — показан как есть`, col);
       return [{ type: 'unknown', rawType: 'quiz', body }];
     }
     return [{
@@ -465,7 +526,7 @@ function parseQuiz(a: Attrs, body: string, line: number, warn: (msg: string) => 
     if (items.length >= 2) {
       return [{ type: 'quiz', quizType: 'order', question: qText.split('\n')[0]?.trim() || 'Восстанови порядок', items, ...ex, points }];
     }
-    warn(`:::quiz order без списка шагов (строка ${line}) — показан как есть`);
+    warn(`:::quiz order без списка шагов (строка ${line}) — показан как есть`, col);
     return [{ type: 'unknown', rawType: 'quiz', body }];
   }
 
@@ -474,7 +535,7 @@ function parseQuiz(a: Attrs, body: string, line: number, warn: (msg: string) => 
     const quizType: 'single' | 'multi' =
       attrType === 'multi' || marked > 1 ? 'multi' : 'single';
     if (quizType === 'single' && marked !== 1) {
-      warn(`:::quiz single без ровно одного [x] (строка ${line})`);
+      warn(`:::quiz single без ровно одного [x] (строка ${line})`, col);
     }
     return [{
       type: 'quiz', quizType, question: qText || 'Вопрос',
@@ -496,26 +557,32 @@ function parseQuiz(a: Attrs, body: string, line: number, warn: (msg: string) => 
     if (c) cards.push({ type: 'card', front: c.front, back: c.back });
   }
   if (cards.length > 0) return cards;
-  warn(`:::quiz без опций и без answer (строка ${line}) — показан как есть`);
+  warn(`:::quiz без опций и без answer (строка ${line}) — показан как есть`, col);
   return [{ type: 'unknown', rawType: 'quiz', body }];
 }
 
-function extractSolutions(body: string, warn: (msg: string) => void): { text: string; solutions: string[] } {
+function extractSolutions(body: string, warn: (msg: string, col?: number) => void): { text: string; solutions: string[] } {
   const lines = body.split('\n');
   const text: string[] = [];
   const solutions: string[] = [];
   let i = 0;
   while (i < lines.length) {
     const m = OPEN_RE.exec(lines[i].trim());
-    if (m && m[1].toLowerCase() === 'solution') {
+    if (m && m[1].toLowerCase() === 'solution' && !CODE_FENCE_RE.test(lines[i].trim())) {
       const inner: string[] = [];
       i++;
       let depth = 1;
+      let inFcode = false;
       while (i < lines.length && depth > 0) {
         const t = lines[i].trim();
-        if (CLOSE_RE.test(t)) depth--;
-        else if (OPEN_RE.test(t)) depth++;
-        if (depth > 0) inner.push(lines[i]);
+        if (CODE_FENCE_RE.test(t)) {
+          inFcode = !inFcode;
+          inner.push(lines[i]);
+        } else {
+          if (!inFcode && CLOSE_RE.test(t)) depth--;
+          else if (!inFcode && OPEN_RE.test(t)) depth++;
+          if (depth > 0) inner.push(lines[i]);
+        }
         i++;
       }
       solutions.push(inner.join('\n').trim());
@@ -524,7 +591,7 @@ function extractSolutions(body: string, warn: (msg: string) => void): { text: st
       i++;
     }
   }
-  if (solutions.length === 0) warn(':::task без вложенного :::solution');
+  if (solutions.length === 0) warn(':::task без вложенного :::solution', 1);
   return { text: text.join('\n'), solutions };
 }
 
@@ -538,7 +605,8 @@ export function parseSmd(raw: string, uri?: string): SmdDoc {
 
 export function parseSmdFull(raw: string, uri?: string): SmdParseResult {
   const warnings: SmdParseWarning[] = [];
-  const warn = (message: string, line?: number) => warnings.push(line !== undefined ? { line, message } : { message });
+  const warn = (message: string, line?: number, col?: number) =>
+    warnings.push({ line: line ?? 0, col: col ?? 1, message });
 
   const src = raw.replace(/\r\n?/g, '\n');
   let rest = src;
@@ -549,7 +617,7 @@ export function parseSmdFull(raw: string, uri?: string): SmdParseResult {
     try {
       fm = parseFrontmatter(fmMatch[1]);
     } catch {
-      warn('frontmatter не разобран — взят заголовок из имени файла');
+      warn('frontmatter не разобран — взят заголовок из имени файла', 1, 1);
     }
     lineBase = fmMatch[0].split('\n').length - 1;
     rest = src.slice(fmMatch[0].length);
@@ -591,16 +659,22 @@ export function parseSmdFull(raw: string, uri?: string): SmdParseResult {
       const attrs = parseAttrs(om[2] ?? '');
       const inner: string[] = [];
       const startLine = i + 1 + lineBase;
+      const startCol = line.indexOf(':::') + 1;
       i++;
       let depth = 1;
       let closed = false;
+      let inFcode = false;
       while (i < lines.length) {
         const t = lines[i].trim();
-        if (CLOSE_RE.test(t)) {
+        if (CODE_FENCE_RE.test(t)) {
+          // ::: внутри код-блока — часть кода, не граница блока.
+          inFcode = !inFcode;
+          inner.push(lines[i]);
+        } else if (!inFcode && CLOSE_RE.test(t)) {
           depth--;
           if (depth === 0) { closed = true; i++; break; }
           inner.push(lines[i]);
-        } else if (OPEN_RE.test(t)) {
+        } else if (!inFcode && OPEN_RE.test(t)) {
           depth++;
           inner.push(lines[i]);
         } else {
@@ -608,15 +682,16 @@ export function parseSmdFull(raw: string, uri?: string): SmdParseResult {
         }
         i++;
       }
-      if (!closed) warn(`:::Незакрытый блок :::${ftype} (строка ${startLine}) — закрыт концом файла`);
-      const fence: Fence = { type: ftype, attrs, body: inner.join('\n'), line: startLine };
+      if (!closed) warn(`:::Незакрытый блок :::${ftype} (строка ${startLine}) — закрыт концом файла`, startLine, startCol);
+      const fence: Fence = { type: ftype, attrs, body: inner.join('\n'), line: startLine, col: startCol };
       if (ftype.toLowerCase() === 'solution') {
-        warn(`:::solution вне :::task (строка ${startLine}) — показан отдельно`);
+        warn(`:::solution вне :::task (строка ${startLine}) — показан отдельно`, startLine, startCol);
       }
-      blocks.push(...fenceToBlocks(fence, (msg) => warn(msg, startLine)));
+      blocks.push(...fenceToBlocks(fence, (msg, col) => warn(msg, startLine, col ?? startCol)));
       continue;
     }
     if (CLOSE_RE.test(s)) {
+      warn('одиночный ::: без открытия — пропущен', i + 1 + lineBase, line.indexOf(':::') + 1);
       i++; // stray ::: — пропускаем
       continue;
     }

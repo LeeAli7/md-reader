@@ -15,9 +15,18 @@ export interface QuizOption {
   correct: boolean;
 }
 
+export interface MetaLink {
+  text: string;
+  href: string;
+}
+
 export type SmdBlock =
   | { type: 'theory'; id?: string; body: string }
   | { type: 'def'; term?: string; body: string }
+  | { type: 'theorem'; id?: string; name?: string; body: string }
+  | { type: 'proof'; for?: string; body: string }
+  | { type: 'summary'; body: string }
+  | { type: 'meta-links'; links: MetaLink[]; body: string }
   | { type: 'formula'; body: string }
   | { type: 'spoiler'; title?: string; body: string }
   | { type: 'solution'; body: string }

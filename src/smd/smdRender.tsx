@@ -87,6 +87,35 @@ function BlockView({ block, ctx }: { block: SmdBlock; ctx: Ctx }) {
       return <ChecklistBlock items={block.items} ctx={ctx} />;
     case 'compare-table':
       return <CompareTable head={block.head} rows={block.rows} ctx={ctx} />;
+    case 'theorem':
+      return (
+        <View style={[s.def, { borderLeftColor: '#3B82F6', backgroundColor: ctx.rt.text + '08' }]}>
+          <Text style={[s.defTerm, { color: ctx.rt.text, fontSize: ctx.fontSize * 1.1 }]}>
+            {block.name ?? 'Теорема'}
+          </Text>
+          <RichText body={block.body} ctx={ctx} />
+        </View>
+      );
+    case 'proof':
+      return <Reveal title="Доказательство" body={block.body} icon="checkmark-circle-outline" ctx={ctx} />;
+    case 'summary':
+      return (
+        <View style={[s.def, { borderLeftColor: '#22C55E', backgroundColor: ctx.rt.text + '08' }]}>
+          <Text style={[s.defTerm, { color: ctx.rt.text, fontSize: ctx.fontSize * 1.1 }]}>Выжимка</Text>
+          <RichText body={block.body} ctx={ctx} />
+        </View>
+      );
+    case 'meta-links':
+      return (
+        <View>
+          {block.links.map((l, i) => (
+            <Text key={i} style={{ color: '#3B82F6', fontSize: ctx.fontSize, marginBottom: 6 }}>
+              {l.text}
+            </Text>
+          ))}
+          {block.links.length === 0 ? <RichText body={block.body} ctx={ctx} /> : null}
+        </View>
+      );
     case 'unknown':
       return (
         <View style={[s.callout, { borderColor: '#9CA3AF', backgroundColor: ctx.rt.text + '05' }]}>
