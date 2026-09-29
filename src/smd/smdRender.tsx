@@ -213,7 +213,7 @@ function CardBlock({ front, back, ctx }: { front: string; back: string; ctx: Ctx
       </View>
       <Pressable onPress={() => setFlipped(!flipped)}>
         <Text style={[s.cardText, { color: ctx.rt.text, fontSize: ctx.fontSize * 1.15, textAlign: 'center', fontWeight: flipped ? '400' : '700' }]}>
-          {flipped ? back : front}
+          {fixArrows(flipped ? back : front)}
         </Text>
         {!flipped && <Text style={[s.revealHint, { color: ctx.rt.text + '60', textAlign: 'center' }]}>тап — ответ</Text>}
       </Pressable>
@@ -310,6 +310,12 @@ function splitCloze(body: string): { text: string; hidden: boolean }[] {
   }
   if (last < body.length) out.push({ text: body.slice(last), hidden: false });
   return out.length > 0 ? out : [{ text: body, hidden: false }];
+}
+
+// Рукописные стрелки с телефона: 0'n +1 (апостроф+n вместо →) → показываем стрелкой.
+// Только в квизах/карточках (в теории 'n вроде rock'n'roll не трогаем).
+function fixArrows(s: string): string {
+  return (s ?? '').replace(/(\S)'[nN](?=[\s),.\];:!?]|$)/g, '$1→');
 }
 
 // --- детерминированный шаффл (seed из вопроса): порядок «как в игре», стабилен ---
@@ -487,7 +493,7 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
               size={18}
               color={r === true ? '#22C55E' : r === false ? '#EF4444' : ctx.rt.text + '80'}
             />
-            <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>{o.text}</Text>
+            <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>{fixArrows(o.text)}</Text>
           </Pressable>
         );
       })}
@@ -546,7 +552,7 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
                         <Text style={s.linkBadgeText}>{badge}</Text>
                       </View>
                     ) : null}
-                    <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>{pairs[li]?.left ?? ''}</Text>
+                    <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>{fixArrows(pairs[li]?.left ?? '')}</Text>
                   </View>
                 </Pressable>
                 <Pressable
@@ -567,7 +573,7 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
                       </View>
                     ) : null}
                     <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>
-                      {pairs[pairIdx]?.right ?? ''}
+                      {fixArrows(pairs[pairIdx]?.right ?? '')}
                     </Text>
                   </View>
                 </Pressable>
@@ -598,7 +604,7 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
                 </Text>
               </View>
               <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize, flex: 1 }]}>
-                {orderItems[itemIdx]}
+                {fixArrows(orderItems[itemIdx])}
               </Text>
               <Ionicons name="swap-vertical-outline" size={18} color={ctx.rt.text + '40'} />
             </Pressable>
@@ -813,7 +819,7 @@ const s = StyleSheet.create({
   cmpHead: { fontWeight: '700' },
   clozeText: { lineHeight: 24 },
   matchWrap: { gap: 8, marginTop: 4 },
-  matchRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  matchRow: { flexDirection: 'row', alignItems: 'stretch', gap: 8 },
   matchCell: { flex: 1, borderWidth: 1, borderRadius: 10, padding: 10 },
   linkBadge: { minWidth: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   linkBadgeText: { color: '#FFF', fontSize: 13, fontWeight: '700' },

@@ -110,8 +110,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<SearchScope>('files');
   const [searchTag, setSearchTag] = useState<string | null>(null);
-  // Фильтр «Учёба» — только .smd конспекты.
-  const [studyOnly, setStudyOnly] = useState(false);
   // Перемещение
   const [showMove, setShowMove] = useState(false);
   const [moveDest, setMoveDest] = useState('');
@@ -476,16 +474,14 @@ export default function FileBrowserScreen({ navigation }: Props) {
   // --- Списки ---
   const visibleEntries = React.useMemo(() => {
     const dir = sortAsc ? 1 : -1;
-    const base = studyOnly
-      ? entries.filter((e) => !e.isDir && e.name.toLowerCase().endsWith('.smd'))
-      : entries;
+    const base = entries;
     return [...base].sort((a, b) => {
       if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
       if (sortKey === 'date') return (a.modifiedAt - b.modifiedAt) * dir;
       if (sortKey === 'size') return ((a.size || 0) - (b.size || 0)) * dir;
       return a.name.localeCompare(b.name) * dir;
     });
-  }, [entries, sortKey, sortAsc, studyOnly]);
+  }, [entries, sortKey, sortAsc]);
 
   // --- Поиск: имя + теги + избранное ---
   const q = query.trim().toLowerCase();
@@ -625,24 +621,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
               </Pressable>
             </React.Fragment>
           ))}
-        </View>
-      )}
-
-      {/* Фильтр: Все / Учёба (.smd) */}
-      {!isSelecting && tab === 'files' && (
-        <View style={s.filterRow}>
-          {([['all', 'Все'], ['study', '🎓 Учёба']] as const).map(([k, label]) => {
-            const active = (k === 'study') === studyOnly;
-            return (
-              <Pressable
-                key={k}
-                onPress={() => setStudyOnly(k === 'study')}
-                style={[s.sortChip, active && { backgroundColor: theme.accentSoft, borderColor: theme.accent }]}
-              >
-                <Text style={[s.sortText, { color: active ? theme.accent : theme.textSecondary }]}>{label}</Text>
-              </Pressable>
-            );
-          })}
         </View>
       )}
 
