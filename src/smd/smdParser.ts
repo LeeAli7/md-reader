@@ -777,7 +777,10 @@ export function smdToc(doc: SmdDoc): SmdTocEntry[] {
     } else if (b.type === 'quiz') {
       out.push({ level: 2, title: (b.question || 'Вопрос').split('\n')[0].slice(0, 80), blockIdx: i });
     } else if (b.type === 'task') {
-      out.push({ level: 2, title: `Задача${b.difficulty ? ` · ${b.difficulty}` : ''}`, blockIdx: i });
+      const first = (b.body || '').split('\n').map((s) => s.trim()).find((s) => s.length > 0) ?? '';
+      const m = /^(Задача\s+[0-9а-яА-ЯёЁ.]+|Вопрос\s+\S+)/.exec(first);
+      const num = m ? m[0].replace(/[.]+$/, '') : '';
+      out.push({ level: 2, title: (num || first).slice(0, 80) || 'Задача', blockIdx: i });
     } else if (b.type === 'spoiler') {
       out.push({ level: 3, title: (b.title ?? 'Спойлер').slice(0, 80), blockIdx: i });
     } else if (b.type === 'checklist') {
