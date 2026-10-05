@@ -164,7 +164,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
             {m.role === 'user' ? (
               <Text style={{ color: theme.text, fontSize: fontSize * 0.94, lineHeight: 21 }}>{m.text}</Text>
             ) : (
-              <Markdown style={mdStyle}>{prettifySpans(m.text)}</Markdown>
+              <Markdown style={mdStyle}>{prettifySpans(m.text, true)}</Markdown>
             )}
           </View>
         ))}

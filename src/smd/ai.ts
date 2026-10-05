@@ -94,6 +94,7 @@ export async function saveChat(chatId: string, msgs: ChatMsg[]): Promise<void> {
 function buildInput(task: string, solution: string, history: ChatMsg[], question: string): string {
   const parts = [
     'Ты — репетитор. Ученик разбирает задачу из конспекта. Объясняй по-русски, коротко и по делу, с опорой на текст задачи.',
+    'ОФОРМЛЕНИЕ ОТВЕТА (строго): жирный шрифт только для ключевых терминов и итога, не для всего текста. Формулы — в $...$ в одну строку, индексы через _ (C_2H_4), дроби пиши как (a)/(b), НЕ используй \\frac, \\dfrac, $$, \\begin, \\end. Списки — обычные маркеры.',
     `ЗАДАЧА:\n${task}`,
   ];
   if (solution.trim()) parts.push(`РАЗБОР (скрыт от ученика, опирайся на него):\n${solution}`);

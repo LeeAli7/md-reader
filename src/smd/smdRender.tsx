@@ -173,7 +173,8 @@ const SUP: Record<string, string> = {
 function texToText(s: string): string {
   let o = s.replace(/\\\\/g, '\\');
   o = o.replace(/\\xrightarrow\{([^}]*)\}/g, '→');
-  o = o.replace(/\\([a-zA-Z]+)/g, (m, c) => TEX_CMD[c] ?? m);
+  o = o.replace(/\\d?frac\{([^}]*)\}\{([^}]*)\}/g, '($1)/($2)');
+  o = o.replace(/\\([a-zA-Z]+)/g, (m, c) => TEX_CMD[c] ?? m.replace(/^\\/, ''));
   o = o.replace(/_\{([^}]+)\}/g, (_, g) => [...g].map((ch: string) => SUB[ch] ?? ch).join(''));
   o = o.replace(/\^\{([^}]+)\}/g, (_, g) => [...g].map((ch: string) => SUP[ch] ?? ch).join(''));
   o = o.replace(/_([0-9a-zA-Z+\-()])/g, (_, c) => SUB[c] ?? `_${c}`);
@@ -181,9 +182,16 @@ function texToText(s: string): string {
   return o;
 }
 // $..$ → читаемо, только если внутри похоже на формулу (иначе цены "$5 и $10" не трогаем).
-export function prettifySpans(body: string): string {
-  return body.replace(/\$([^$\n]+)\$/g, (m, inner) =>
-    /[\\_^]/.test(inner) || /[A-Za-z]_\d/.test(inner) ? texToText(inner) : m);
+// aggressive=true (чат ИИ): срывать парные $ всегда, брать многострочные.
+export function prettifySpans(body: string, aggressive = false): string {
+  const isMath = (inner: string) =>
+    aggressive || /[\\_^]/.test(inner) || /[A-Za-z]_\d/.test(inner);
+  // Сначала витринные $$..$$ (могут быть многострочными).
+  let o = body.replace(/\$\$([\s\S]+?)\$\$/g, (m, inner) =>
+    isMath(inner) || aggressive ? texToText(inner) : m);
+  o = o.replace(/\$([^$]+?)\$/gs, (m, inner) =>
+    isMath(inner) ? texToText(inner) : aggressive ? inner : m);
+  return o;
 }
 
 function BlockView({ block, ctx, blocks, index, docKey, onAskTask }: {
