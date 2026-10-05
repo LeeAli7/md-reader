@@ -4,11 +4,12 @@
 
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, ScrollView, TextInput,
+  View, Text, Pressable, StyleSheet, ScrollView, TextInput, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
 import type { SmdBlock, SmdDoc } from './smdTypes';
+import { askTask, type ChatMsg } from './ai';
 
 interface Ctx {
   mdStyle: any;
@@ -26,7 +27,7 @@ export function SmdDocView({ doc, mdStyle, rt, fontSize, onBlockLayout }: { doc:
           key={i}
           onLayout={onBlockLayout ? (e) => onBlockLayout(i, e.nativeEvent.layout.y) : undefined}
         >
-          <BlockView block={b} ctx={ctx} />
+          <BlockView block={b} ctx={ctx} blocks={doc.blocks} index={i} />
         </View>
       ))}
     </View>
@@ -53,6 +54,86 @@ function SmdMetaHeader({ doc, rt, fontSize }: { doc: SmdDoc; rt: any; fontSize: 
           </View>
         ))}
       </View>
+    </View>
+  );
+}
+
+// --- задача + «Спросить»: вопросы с контекстом задачи через zen-прокси ---
+
+function TaskAssist({ block, solution, ctx }: { block: Extract<SmdBlock, { type: 'task' }>; solution: string; ctx: Ctx }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const send = async () => {
+    const question = q.trim();
+    if (!question || busy) return;
+    setQ('');
+    setErr(null);
+    setBusy(true);
+    const hist = [...msgs];
+    setMsgs((p) => [...p, { role: 'user', text: question }]);
+    try {
+      const answer = await askTask(block.body, solution, hist, question);
+      setMsgs((p) => [...p, { role: 'assistant', text: answer }]);
+    } catch (e: any) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <View style={[s.card, { borderColor: '#F59E0B88', backgroundColor: '#F59E0B0D' }]}>
+      <View style={s.cardHead}>
+        <Ionicons name="pencil-outline" size={16} color="#F59E0B" />
+        <Text style={[s.cardLabel, { color: '#F59E0B' }]}>
+          Задача{block.difficulty ? ` · сложность ${block.difficulty}` : ''}{block.points ? ` · ${block.points} б.` : ''}
+        </Text>
+      </View>
+      <RichText body={prettifySpans(block.body)} ctx={ctx} />
+      <Pressable onPress={() => setOpen(!open)} style={s.askBtn} hitSlop={6}>
+        <Ionicons name="chatbubble-ellipses-outline" size={16} color="#3B82F6" />
+        <Text style={[s.askBtnText, { color: '#3B82F6' }]}>{open ? 'Скрыть вопросы' : 'Спросить по задаче'}</Text>
+      </Pressable>
+      {open && (
+        <View style={{ marginTop: 8 }}>
+          {msgs.map((m, i) => (
+            <View
+              key={i}
+              style={[s.chatMsg, m.role === 'user'
+                ? { alignSelf: 'flex-end', backgroundColor: '#3B82F622' }
+                : { alignSelf: 'flex-start', backgroundColor: ctx.rt.text + '0D' }]}
+            >
+              <Text style={{ color: ctx.rt.text, fontSize: ctx.fontSize * 0.92, lineHeight: 20 }}>{m.text}</Text>
+            </View>
+          ))}
+          {busy && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 6 }}>
+              <ActivityIndicator size="small" color="#3B82F6" />
+              <Text style={{ color: ctx.rt.text + '60', fontSize: 13 }}>Думаю над задачей…</Text>
+            </View>
+          )}
+          {err ? (
+            <Text style={{ color: '#EF4444', fontSize: 13, marginVertical: 4 }}>{err}</Text>
+          ) : null}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <TextInput
+              style={[s.freeInput, { flex: 1, borderColor: ctx.rt.text + '30', color: ctx.rt.text, fontSize: ctx.fontSize * 0.92, marginBottom: 0 }]}
+              placeholder="Твой вопрос…"
+              placeholderTextColor={ctx.rt.text + '50'}
+              value={q}
+              onChangeText={setQ}
+              onSubmitEditing={send}
+              returnKeyType="send"
+              editable={!busy}
+            />
+            <Pressable onPress={send} disabled={busy || !q.trim()} hitSlop={8} style={[s.sendBtn, { opacity: busy || !q.trim() ? 0.4 : 1 }]}>
+              <Ionicons name="send" size={20} color="#3B82F6" />
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -89,7 +170,16 @@ function prettifySpans(body: string): string {
     /[\\_^]/.test(inner) || /[A-Za-z]_\d/.test(inner) ? texToText(inner) : m);
 }
 
-function BlockView({ block, ctx }: { block: SmdBlock; ctx: Ctx }) {
+function BlockView({ block, ctx, blocks, index }: { block: SmdBlock; ctx: Ctx; blocks?: SmdBlock[]; index?: number }) {
+  const solutionFor = (): string => {
+    if (!blocks || index === undefined) return '';
+    const out: string[] = [];
+    for (let k = index + 1; k < blocks.length; k++) {
+      if (blocks[k].type === 'solution') out.push((blocks[k] as { body: string }).body);
+      else break;
+    }
+    return out.join('\n\n');
+  };
   switch (block.type) {
     case 'theory':
       return <RichText body={block.body} ctx={ctx} />;
@@ -109,17 +199,7 @@ function BlockView({ block, ctx }: { block: SmdBlock; ctx: Ctx }) {
         </View>
       );
     case 'task':
-      return (
-        <View style={[s.card, { borderColor: '#F59E0B88', backgroundColor: '#F59E0B0D' }]}>
-          <View style={s.cardHead}>
-            <Ionicons name="pencil-outline" size={16} color="#F59E0B" />
-            <Text style={[s.cardLabel, { color: '#F59E0B' }]}>
-              Задача{block.difficulty ? ` · сложность ${block.difficulty}` : ''}{block.points ? ` · ${block.points} б.` : ''}
-            </Text>
-          </View>
-          <RichText body={prettifySpans(block.body)} ctx={ctx} />
-        </View>
-      );
+      return <TaskAssist block={block} solution={solutionFor()} ctx={ctx} />;
     case 'spoiler':
       return <Reveal title={block.title ?? 'Скрыто'} ctx={ctx} body={block.body} icon="eye-outline" />;
     case 'solution':
@@ -827,5 +907,9 @@ const s = StyleSheet.create({
   orderPos: { minWidth: 28, alignItems: 'center', justifyContent: 'center' },
   orderPosText: { fontSize: 14, fontWeight: '700', minWidth: 26, height: 26, lineHeight: 26, textAlign: 'center', borderRadius: 13, overflow: 'hidden' },
   miniBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6 },
+  askBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, paddingVertical: 8 },
+  askBtnText: { fontSize: 14, fontWeight: '600' },
+  chatMsg: { maxWidth: '88%', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, marginBottom: 6 },
+  sendBtn: { padding: 8 },
   orderBtn: { padding: 6 },
 });

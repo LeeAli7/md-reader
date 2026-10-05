@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, ScrollView, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, Pressable, StyleSheet, ScrollView, Alert, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
@@ -8,6 +8,7 @@ import { fonts } from '../theme/fonts';
 import { useAppSettingsOpt } from '../context/AppSettingsContext';
 import type { ThemeMode } from '../context/AppSettingsContext';
 import { exportVaultBackup } from '../utils/backup';
+import { AI_DEFAULTS, checkConnection, getAiConfig, saveAiConfig } from '../smd/ai';
 
 const MODES: { key: ThemeMode; label: string; icon: string }[] = [
   { key: 'light', label: 'Светлая', icon: 'sunny-outline' },
@@ -158,6 +159,10 @@ export default function SettingsScreen({ navigation }: any) {
       </Pressable>
       <Text style={s.hint}>Вся папка хранилища — в один zip через диалог «Поделиться»</Text>
 
+      {/* Помощник (ИИ) под задачами */}
+      <Text style={[s.sectionTitle, { marginTop: 28 }]}>Помощник (ИИ)</Text>
+      <AiSettings theme={theme} s={s} />
+
       {/* Сброс */}
       <Pressable
         onPress={() => Alert.alert('Сбросить настройки?', 'Вернуть все значения по умолчанию', [
@@ -176,6 +181,87 @@ export default function SettingsScreen({ navigation }: any) {
         <Text style={[s.aboutSub, { color: theme.textSecondary }]}>Читалка и хранитель текстовых знаний</Text>
       </View>
     </ScrollView>
+  );
+}
+
+function AiSettings({ theme, s }: { theme: any; s: any }) {
+  const [base, setBase] = useState('');
+  const [key, setKey] = useState('');
+  const [model, setModel] = useState('');
+  const [status, setStatus] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  useEffect(() => {
+    getAiConfig().then((c) => {
+      setBase(c.base);
+      setKey(c.key);
+      setModel(c.model);
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const save = () => {
+    saveAiConfig({ base: base || AI_DEFAULTS.base, key, model: model || AI_DEFAULTS.model }).catch(() => {});
+    setStatus('Сохранено');
+  };
+  const check = async () => {
+    if (checking) return;
+    setChecking(true);
+    setStatus(null);
+    try {
+      await saveAiConfig({ base: base || AI_DEFAULTS.base, key, model: model || AI_DEFAULTS.model });
+      setStatus(await checkConnection());
+    } catch (e: any) {
+      setStatus(`Ошибка: ${e?.message ?? e}`);
+    } finally {
+      setChecking(false);
+    }
+  };
+  return (
+    <View>
+      <Text style={[s.hint, { marginTop: 0, marginBottom: 6 }]}>Сервер</Text>
+      <TextInput
+        style={[s.aiInput, { borderColor: theme.border, color: theme.text }]}
+        value={base}
+        onChangeText={setBase}
+        autoCapitalize="none"
+        autoCorrect={false}
+        placeholder={AI_DEFAULTS.base}
+        placeholderTextColor={theme.textSecondary}
+      />
+      <Text style={[s.hint, { marginTop: 10, marginBottom: 6 }]}>API-ключ</Text>
+      <TextInput
+        style={[s.aiInput, { borderColor: theme.border, color: theme.text }]}
+        value={key}
+        onChangeText={setKey}
+        autoCapitalize="none"
+        autoCorrect={false}
+        secureTextEntry
+        placeholder="Вставь ключ"
+        placeholderTextColor={theme.textSecondary}
+      />
+      <Text style={[s.hint, { marginTop: 10, marginBottom: 6 }]}>Модель</Text>
+      <TextInput
+        style={[s.aiInput, { borderColor: theme.border, color: theme.text }]}
+        value={model}
+        onChangeText={setModel}
+        autoCapitalize="none"
+        autoCorrect={false}
+        placeholder={AI_DEFAULTS.model}
+        placeholderTextColor={theme.textSecondary}
+      />
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+        <Pressable onPress={save} style={[s.backupBtn, { flex: 1, borderColor: theme.border }]}>
+          <Text style={[s.backupText, { color: theme.text }]}>Сохранить</Text>
+        </Pressable>
+        <Pressable
+          onPress={check}
+          disabled={checking}
+          style={[s.backupBtn, { flex: 1, borderColor: theme.accent, opacity: checking ? 0.6 : 1 }]}
+        >
+          <Text style={[s.backupText, { color: theme.accent }]}>{checking ? 'Проверяю…' : 'Проверить связь'}</Text>
+        </Pressable>
+      </View>
+      {status ? <Text style={[s.hint, { marginTop: 8 }]}>{status}</Text> : null}
+    </View>
   );
 }
 
@@ -205,6 +291,7 @@ function styles(theme: any, insets: any) {
     resetText: { fontSize: 15, color: '#EF4444', fontWeight: '500' },
     backupBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderRadius: 14, paddingVertical: 14, marginTop: 28 },
     backupText: { fontSize: 15, fontWeight: '600' },
+    aiInput: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
     about: { marginTop: 32 },
     aboutText: { fontSize: 15 },
     aboutSub: { fontSize: 13, marginTop: 4 },
