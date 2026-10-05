@@ -9,7 +9,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
 import type { SmdBlock, SmdDoc } from './smdTypes';
-import { askTask, type ChatMsg } from './ai';
+import { askTask, chatIdFor, type ChatMsg } from './ai';
 
 interface Ctx {
   mdStyle: any;
@@ -17,7 +17,7 @@ interface Ctx {
   fontSize: number;
 }
 
-export function SmdDocView({ doc, mdStyle, rt, fontSize, onBlockLayout }: { doc: SmdDoc; mdStyle: any; rt: any; fontSize: number; onBlockLayout?: (index: number, y: number) => void }) {
+export function SmdDocView({ doc, mdStyle, rt, fontSize, onBlockLayout, docKey, onAskTask }: { doc: SmdDoc; mdStyle: any; rt: any; fontSize: number; onBlockLayout?: (index: number, y: number) => void; docKey?: string; onAskTask?: (t: { chatId: string; title: string; task: string; solution: string }) => void }) {
   const ctx: Ctx = { mdStyle, rt, fontSize };
   return (
     <View>
@@ -27,7 +27,7 @@ export function SmdDocView({ doc, mdStyle, rt, fontSize, onBlockLayout }: { doc:
           key={i}
           onLayout={onBlockLayout ? (e) => onBlockLayout(i, e.nativeEvent.layout.y) : undefined}
         >
-          <BlockView block={b} ctx={ctx} blocks={doc.blocks} index={i} />
+          <BlockView block={b} ctx={ctx} blocks={doc.blocks} index={i} docKey={docKey} onAskTask={onAskTask} />
         </View>
       ))}
     </View>
@@ -60,12 +60,28 @@ function SmdMetaHeader({ doc, rt, fontSize }: { doc: SmdDoc; rt: any; fontSize: 
 
 // --- задача + «Спросить»: вопросы с контекстом задачи через zen-прокси ---
 
-function TaskAssist({ block, solution, ctx }: { block: Extract<SmdBlock, { type: 'task' }>; solution: string; ctx: Ctx }) {
+function TaskAssist({ block, solution, ctx, docKey, onAskTask }: {
+  block: Extract<SmdBlock, { type: 'task' }>; solution: string; ctx: Ctx; docKey?: string;
+  onAskTask?: (t: { chatId: string; title: string; task: string; solution: string }) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const openBranch = () => {
+    if (!onAskTask) {
+      setOpen(!open);
+      return;
+    }
+    const { chatIdFor: cid } = { chatIdFor };
+    onAskTask({
+      chatId: cid(docKey ?? '', block.body),
+      title: block.body.split('\n')[0].slice(0, 60) || 'Вопрос по задаче',
+      task: block.body,
+      solution,
+    });
+  };
   const send = async () => {
     const question = q.trim();
     if (!question || busy) return;
@@ -92,9 +108,9 @@ function TaskAssist({ block, solution, ctx }: { block: Extract<SmdBlock, { type:
         </Text>
       </View>
       <RichText body={prettifySpans(block.body)} ctx={ctx} />
-      <Pressable onPress={() => setOpen(!open)} style={s.askBtn} hitSlop={6}>
+      <Pressable onPress={openBranch} style={s.askBtn} hitSlop={6}>
         <Ionicons name="chatbubble-ellipses-outline" size={16} color="#3B82F6" />
-        <Text style={[s.askBtnText, { color: '#3B82F6' }]}>{open ? 'Скрыть вопросы' : 'Спросить по задаче'}</Text>
+        <Text style={[s.askBtnText, { color: '#3B82F6' }]}>{onAskTask ? 'Спросить в ветке' : open ? 'Скрыть вопросы' : 'Спросить по задаче'}</Text>
       </Pressable>
       {open && (
         <View style={{ marginTop: 8 }}>
@@ -165,12 +181,15 @@ function texToText(s: string): string {
   return o;
 }
 // $..$ → читаемо, только если внутри похоже на формулу (иначе цены "$5 и $10" не трогаем).
-function prettifySpans(body: string): string {
+export function prettifySpans(body: string): string {
   return body.replace(/\$([^$\n]+)\$/g, (m, inner) =>
     /[\\_^]/.test(inner) || /[A-Za-z]_\d/.test(inner) ? texToText(inner) : m);
 }
 
-function BlockView({ block, ctx, blocks, index }: { block: SmdBlock; ctx: Ctx; blocks?: SmdBlock[]; index?: number }) {
+function BlockView({ block, ctx, blocks, index, docKey, onAskTask }: {
+  block: SmdBlock; ctx: Ctx; blocks?: SmdBlock[]; index?: number; docKey?: string;
+  onAskTask?: (t: { chatId: string; title: string; task: string; solution: string }) => void;
+}) {
   const solutionFor = (): string => {
     if (!blocks || index === undefined) return '';
     const out: string[] = [];
@@ -199,7 +218,7 @@ function BlockView({ block, ctx, blocks, index }: { block: SmdBlock; ctx: Ctx; b
         </View>
       );
     case 'task':
-      return <TaskAssist block={block} solution={solutionFor()} ctx={ctx} />;
+      return <TaskAssist block={block} solution={solutionFor()} ctx={ctx} docKey={docKey} onAskTask={onAskTask} />;
     case 'spoiler':
       return <Reveal title={block.title ?? 'Скрыто'} ctx={ctx} body={block.body} icon="eye-outline" />;
     case 'solution':

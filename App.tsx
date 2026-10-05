@@ -9,6 +9,7 @@ import FileBrowserScreen from './src/screens/FileBrowserScreen';
 import ReaderScreen from './src/screens/ReaderScreen';
 import EditorScreen from './src/screens/EditorScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import TaskChatScreen from './src/screens/TaskChatScreen';
 import { initIncomingFileListener } from './src/utils/incomingFile';
 import * as Font from 'expo-font';
 
@@ -77,6 +78,7 @@ export default function App() {
           <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
             <Stack.Screen name="Files" component={FileBrowserScreen} />
             <Stack.Screen name="Reader" component={ReaderScreen} />
+            <Stack.Screen name="TaskChat" component={TaskChatScreen} />
             <Stack.Screen name="Editor" component={EditorScreen as any} options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
           </Stack.Navigator>

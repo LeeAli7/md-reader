@@ -49,6 +49,48 @@ export interface ChatMsg {
   text: string;
 }
 
+export interface AttachedImage {
+  mime: string;
+  base64: string;
+}
+
+export interface AskOpts {
+  signal?: AbortSignal;
+  images?: AttachedImage[];
+}
+
+// Стабильный id ветки на задачу (история переживает перезаходы).
+export function chatIdFor(uri: string, taskBody: string): string {
+  let h = 2166136261;
+  const s = `${uri}#${taskBody}`;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.codePointAt(i) ?? 0;
+    h = Math.imul(h, 16777619);
+  }
+  return `smd_chat_${(h >>> 0).toString(36)}`;
+}
+
+export async function loadChat(chatId: string): Promise<ChatMsg[]> {
+  try {
+    const raw = await AsyncStorage.getItem(chatId);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((m) => m && typeof m.text === 'string')
+      .map((m): ChatMsg => ({ role: m.role === 'assistant' ? 'assistant' : 'user', text: m.text.slice(0, 8000) }))
+      .slice(-100);
+  } catch {
+    return [];
+  }
+}
+
+export async function saveChat(chatId: string, msgs: ChatMsg[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(chatId, JSON.stringify(msgs.slice(-100)));
+  } catch {}
+}
+
 function buildInput(task: string, solution: string, history: ChatMsg[], question: string): string {
   const parts = [
     'Ты — репетитор. Ученик разбирает задачу из конспекта. Объясняй по-русски, коротко и по делу, с опорой на текст задачи.',
@@ -104,14 +146,29 @@ export async function askTask(
   solution: string,
   history: ChatMsg[],
   question: string,
-  signal?: AbortSignal,
+  opts?: AskOpts | AbortSignal,
 ): Promise<string> {
   const cfg = await getAiConfig();
   if (!cfg.key) throw new Error('Нет API-ключа. Введи его в Настройки → Помощник (ИИ).');
+  const signal = opts instanceof AbortSignal ? opts : opts?.signal;
+  const images = opts instanceof AbortSignal ? [] : opts?.images ?? [];
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 120000);
   const onAbort = () => ctrl.abort();
   signal?.addEventListener('abort', onAbort);
+  const text = buildInput(task, solution, history, question);
+  const input: any = images.length > 0
+    ? [{
+        role: 'user' as const,
+        content: [
+          { type: 'input_text', text },
+          ...images.map((im) => ({
+            type: 'input_image',
+            image_url: `data:${im.mime};base64,${im.base64}`,
+          })),
+        ],
+      }]
+    : text;
   try {
     const res = await fetch(`${cfg.base}/responses`, {
       method: 'POST',
@@ -121,7 +178,7 @@ export async function askTask(
       },
       body: JSON.stringify({
         model: cfg.model,
-        input: buildInput(task, solution, history, question),
+        input,
         stream: false,
       }),
       signal: ctrl.signal,

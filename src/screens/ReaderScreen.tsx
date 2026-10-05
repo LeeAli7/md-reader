@@ -658,12 +658,17 @@ export default function ReaderScreen({ route, navigation }: Props) {
     setTimeout(() => {
       try {
         // .smd: точный прыжок по замеренной координате блока.
+        // Дальние блоки виртуализированы (не замерены) — едем оценкой по доле.
         if (h.blockIdx !== undefined && h.blockIdx >= 0) {
-          const y = smdBlockY.current[active.uri]?.[h.blockIdx];
-          if (typeof y === 'number') {
-            listRefs.current[active.uri]?.scrollToOffset({ offset: Math.max(0, y - 60), animated: true });
-            return;
+          let y = smdBlockY.current[active.uri]?.[h.blockIdx];
+          if (typeof y !== 'number') {
+            const n = Math.max(1, main.smdDoc?.blocks.length ?? 1);
+            const ch = contentH.current[active.uri] ?? 0;
+            const vh = viewportH.current[active.uri] ?? 0;
+            y = (Math.min(h.blockIdx, n - 1) / n) * Math.max(0, ch - vh);
           }
+          listRefs.current[active.uri]?.scrollToOffset({ offset: Math.max(0, y - 60), animated: true });
+          return;
         }
         // md/text/sheet: scrollToIndex на виртуализированном списке падает молча —
         // едем долей от charIndex (замеров не требует, мимо не бьёт).
@@ -874,6 +879,8 @@ export default function ReaderScreen({ route, navigation }: Props) {
                   mdStyle={mdStyle}
                   rt={rt}
                   fontSize={fontSize}
+                  docKey={doc.uri}
+                  onAskTask={(t) => navigation.navigate('TaskChat', t)}
                   onBlockLayout={(i, y) => {
                     const m = smdBlockY.current[doc.uri] ?? {};
                     m[i] = y;
@@ -888,9 +895,10 @@ export default function ReaderScreen({ route, navigation }: Props) {
           onContentSizeChange={makeContentSize(doc.uri, dd.chunks.length, dd.rev)}
           scrollEventThrottle={16}
           removeClippedSubviews={true}
-          initialNumToRender={2}
-          maxToRenderPerBatch={2}
-          windowSize={5}
+          initialNumToRender={3}
+          maxToRenderPerBatch={4}
+          windowSize={11}
+          persistentScrollbar={true}
         />
         {dd.kind === 'binary' && (
           <Pressable
