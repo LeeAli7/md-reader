@@ -89,6 +89,35 @@ async function loadDocx(uri: string): Promise<LoadedDoc> {
   }
 }
 
+export interface RichPalette {
+  bg: string;
+  text: string;
+  border: string;
+  fill: string;
+  link: string;
+  dark: boolean;
+}
+
+// Тема для html-документов (docx/rtf): без неё тёмная тема давала
+// почти чёрный текст на чёрном фоне. Цвета подставляем свои, с !important,
+// потому что внутри документа уже есть хардкод от конвертера.
+export function themeRichHtml(html: string, p: RichPalette): string {
+  const css = `<style id="rt-theme">
+html,body{background:${p.bg} !important;color:${p.text} !important}
+body,body *{color:${p.text} !important;border-color:${p.border} !important}
+body *:not(th){background-color:transparent !important}
+a,a *{color:${p.link} !important;text-decoration:underline}
+th{background:${p.fill} !important}
+td,th{border:1px solid ${p.border} !important;padding:6px 8px;font-size:14px}
+table{border-collapse:collapse;width:100%}
+pre,code{background:${p.fill} !important;border-radius:6px;padding:2px 5px;font-family:ui-monospace,Menlo,monospace}
+blockquote{border-left:3px solid ${p.border} !important;margin-left:0;padding-left:12px;color:${p.text} !important}
+img{max-width:100%;height:auto;border-radius:6px;background:transparent}
+body{font-family:-apple-system,Roboto,sans-serif;padding:16px 20px;line-height:1.65;max-width:800px;margin:0 auto}
+</style>`;
+  return html.includes('</head>') ? html.replace('</head>', css + '</head>') : css + html;
+}
+
 function wrapHtml(inner: string, title: string): string {
   const esc = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return '<!DOCTYPE html><html><head><meta charset="utf-8">'

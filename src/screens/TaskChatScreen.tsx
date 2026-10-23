@@ -4,11 +4,11 @@
 // • запрос живёт в фоне: вышел из приложения — ответ всё равно придёт в ветку
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, AppState, Image, KeyboardAvoidingView, Platform, Pressable,
+  ActivityIndicator, Alert, Animated, AppState, Image, KeyboardAvoidingView, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
@@ -45,10 +45,25 @@ function softenLongWords(input: string): string {
 }
 
 function Typing({ color }: { color: string }) {
+  const dots = [useRef(new Animated.Value(0.3)).current, useRef(new Animated.Value(0.3)).current, useRef(new Animated.Value(0.3)).current];
+  useEffect(() => {
+    const loops = dots.map((v, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 140),
+          Animated.timing(v, { toValue: 1, duration: 420, useNativeDriver: true }),
+          Animated.timing(v, { toValue: 0.3, duration: 420, useNativeDriver: true }),
+          Animated.delay(420 - i * 140),
+        ])
+      )
+    );
+    loops.forEach((l) => l.start());
+    return () => loops.forEach((l) => l.stop());
+  }, []);
   return (
-    <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center', paddingVertical: 2 }}>
-      {[0, 1, 2].map((i) => (
-        <View key={i} style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color, opacity: 0.35 + i * 0.2 }} />
+    <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center', paddingVertical: 3 }}>
+      {dots.map((v, i) => (
+        <Animated.View key={i} style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: color, opacity: v }} />
       ))}
     </View>
   );
@@ -260,6 +275,14 @@ export default function TaskChatScreen({ navigation, route }: any) {
 
   const canSend = (!!q.trim() || att.length > 0) && !busy;
 
+  const confirmClear = () => {
+    if (msgs.length === 0) return;
+    Alert.alert('Очистить ветку?', 'История переписки по этой задаче удалится.', [
+      { text: 'Отмена', style: 'cancel' },
+      { text: 'Очистить', style: 'destructive', onPress: () => { clear(); setMenu(false); } },
+    ]);
+  };
+
   return (
     <View style={[s.container, { backgroundColor: theme.bg, paddingTop: insets.top }]}>
       {/* Шапка без полосы: заголовок и тихая кнопка меню */}
@@ -271,8 +294,8 @@ export default function TaskChatScreen({ navigation, route }: any) {
           <Text style={[s.title, { color: theme.text }]} numberOfLines={1}>{title}</Text>
           <Text style={[s.sub, { color: theme.textSecondary }]} numberOfLines={1}>ветка по задаче</Text>
         </View>
-        <Pressable onPress={() => setMenu(true)} hitSlop={10} style={s.headBtn}>
-          <Ionicons name="ellipsis-horizontal" size={22} color={theme.textSecondary} />
+        <Pressable onPress={confirmClear} hitSlop={8} style={s.headBtn}>
+          <MaterialCommunityIcons name="broom" size={22} color={theme.textSecondary} />
         </Pressable>
       </View>
 
@@ -420,7 +443,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
             hitSlop={6}
             style={[s.round, { backgroundColor: canSend ? theme.accent : theme.fill }]}
           >
-            <Ionicons name={busy ? 'hourglass-outline' : 'arrow-up'} size={20} color={canSend ? theme.onAccent : theme.textSecondary} />
+            <Ionicons name="arrow-up" size={22} color={canSend ? theme.onAccent : theme.textSecondary} />
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -449,7 +472,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
 const s = StyleSheet.create({
   container: { flex: 1 },
   head: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 4, minHeight: 48 },
-  headBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   title: { ...tp.headline, fontFamily: uiFontOf(600), maxWidth: 240 },
   sub: { fontSize: 11, marginTop: 1 },
   ctx: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, padding: 12, marginBottom: 16 },
@@ -470,9 +493,9 @@ const s = StyleSheet.create({
   tray: { gap: 8, paddingHorizontal: 14, paddingBottom: 8 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 8, paddingVertical: 6 },
   chipThumb: { width: 28, height: 28, borderRadius: 7 },
-  bar: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: 12, paddingTop: 8 },
-  round: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
-  input: { flex: 1, borderRadius: 20, paddingHorizontal: 14, paddingTop: 9, paddingBottom: 9, maxHeight: 120, minHeight: 38 },
+  bar: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 14, paddingTop: 8 },
+  round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  input: { flex: 1, borderRadius: 22, paddingHorizontal: 16, paddingTop: 11, paddingBottom: 11, maxHeight: 140, minHeight: 44 },
   sheetBody: { paddingHorizontal: 18 },
   grabber: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12, opacity: 0.5 },
   action: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 15, borderBottomWidth: StyleSheet.hairlineWidth },

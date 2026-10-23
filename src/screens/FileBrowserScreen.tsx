@@ -1272,10 +1272,10 @@ function styles(theme: any, insets: any) {
 
     // --- новый навбар: крупный заголовок, крошки строкой, поиск полем ---
     navRow: { flexDirection: 'row', alignItems: 'center', minHeight: 42 },
-    backChevron: { marginLeft: -8, marginRight: 2, padding: 4 },
+    backChevron: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginLeft: -10 },
     navTitle: { flex: 1, ...tp.largeTitle, letterSpacing: -0.6 },
     navActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-    navBtn: { padding: 7 },
+    navBtn: { minWidth: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
     navBtnText: { ...tp.callout, fontFamily: uiFontOf(600) },
     topVeil: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20, paddingHorizontal: 16, paddingBottom: 18 },
     searchFab: {

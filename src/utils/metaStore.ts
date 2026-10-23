@@ -196,9 +196,35 @@ export interface PositionEntry {
 
 export type PositionMap = Record<string, PositionEntry>;
 
+// Позиции держим ещё и в памяти: при переключении документа доля нужна
+// сразу, синхронно, иначе список стартует с начала и дёргается.
+let posCache: PositionMap | null = null;
+let posLoading: Promise<PositionMap> | null = null;
+
 export async function getPositionMap(): Promise<PositionMap> {
-  const map = await readJSON<PositionMap>(KEYS.positions, {});
-  return map && typeof map === 'object' ? map : {};
+  if (posCache) return posCache;
+  if (!posLoading) {
+    posLoading = readJSON<PositionMap>(KEYS.positions, {})
+      .then((m) => {
+        posCache = m && typeof m === 'object' ? m : {};
+        return posCache;
+      })
+      .catch(() => {
+        posCache = {};
+        return posCache;
+      });
+  }
+  return posLoading;
+}
+
+/** Синхронная доля прокрутки (0..1) — для мгновенного рестора при переключении. */
+export function getPositionSync(uri: string): number {
+  const v = posCache?.[uri]?.offset;
+  return typeof v === 'number' && v > 0 ? v : 0;
+}
+
+export async function primePositions(): Promise<void> {
+  try { await getPositionMap(); } catch {}
 }
 
 /** Saved scroll offset for uri, 0 when never recorded. */
@@ -212,5 +238,6 @@ export async function setPosition(uri: string, offset: number): Promise<void> {
   if (!uri || !(offset >= 0)) return;
   const map = await getPositionMap();
   map[uri] = { offset, ts: Date.now() };
+  posCache = map;
   await writeJSON(KEYS.positions, map);
 }

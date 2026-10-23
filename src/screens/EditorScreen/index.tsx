@@ -401,7 +401,7 @@ function styles(theme: any, insets: any) {
       paddingHorizontal: 6,
       paddingBottom: 2,
     },
-    iconBtn: { minWidth: 44, height: 40, alignItems: 'center', justifyContent: 'center' },
+    iconBtn: { minWidth: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
     title: { ...tp.headline, fontFamily: uiFontOf(600), maxWidth: 240 },
     status: { fontSize: 11, marginTop: 1 },
     done: { fontSize: 15, fontFamily: uiFontOf(600), paddingHorizontal: 6 },

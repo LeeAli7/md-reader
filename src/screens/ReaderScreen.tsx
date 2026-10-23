@@ -10,9 +10,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
 import * as FileSystem from 'expo-file-system';
-import { getRecent, pushRecent, getPosition, setPosition, type RecentEntry } from '../utils/metaStore';
+import { getRecent, pushRecent, getPosition, setPosition, getPositionSync, primePositions, type RecentEntry } from '../utils/metaStore';
 import { getFolderTree, type FolderNode } from '../utils/folderTree';
-import { loadReadable } from '../utils/documentLoader';
+import { loadReadable, themeRichHtml } from '../utils/documentLoader';
 import PdfView from '../components/PdfView';
 import { SmdDocView } from '../smd/smdRender';
 import { mockSmdDoc, mockRichDoc, mockPages } from '../smd/smdMock';
@@ -29,6 +29,18 @@ import { ReadingProgressBar } from '../components/ReadingProgressBar';
 import { Popover } from '../components/Popover';
 import { DocSkeleton } from '../components/Skeleton';
 import type { MenuAction } from '../components/OverflowMenu';
+
+// Разобранные документы живут в памяти: возврат к уже открытому файлу
+// не перечитывает его с диска и не показывает скелетон.
+type CachedDoc = {
+  kind: string;
+  content: string;
+  smdDoc?: any;
+  richHtml?: string;
+  pages?: string[];
+  sheets?: any[];
+};
+const docCache = new Map<string, CachedDoc>();
 
 interface Props {
   route: any;
@@ -123,6 +135,18 @@ function useDoc(uri: string) {
     if (!uri) { setContent(''); setKind('text'); setLoading(false); return; }
     setLoading(true);
     let alive = true;
+    // Мгновенный показ из кэша — без скелетона и мигания при переключении.
+    const warm = docCache.get(uri);
+    if (warm) {
+      setKind(warm.kind as any);
+      setContent(warm.content);
+      setSmdDoc(warm.smdDoc ?? null);
+      setRichHtml(warm.richHtml ?? '');
+      setPages(warm.pages ?? []);
+      setSheets(warm.sheets ?? []);
+      setLoading(false);
+      setRev((r) => r + 1);
+    }
     (async () => {
       try {
         const ext = uri.split('.').pop()?.toLowerCase() ?? '';
@@ -187,6 +211,12 @@ function useDoc(uri: string) {
     })();
     return () => { alive = false; };
   }, [uri, tick]);
+
+  // Кладём разобранное в кэш — следующее открытие будет мгновенным.
+  useEffect(() => {
+    if (!uri || loading) return;
+    docCache.set(uri, { kind, content, smdDoc, richHtml, pages, sheets });
+  }, [uri, loading, kind, content, smdDoc, richHtml, pages, sheets]);
   // Перезачитать только если файл реально изменился (правка из редактора).
   // Пустой reload при каждом фокусе сносил позицию — больше так не делаем.
   const reloadIfChanged = useCallback(async () => {
@@ -286,6 +316,8 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const touchY = useRef(0);
 
   const active = docs[activeIdx] ?? initDoc;
+  // Прогреваем позиции в память — переключение документа не ждёт диск.
+  useEffect(() => { primePositions(); }, []);
   const splitDoc = splitIdx !== null ? docs[splitIdx] : null;
 
   const main = useDoc(active.uri);
@@ -694,14 +726,16 @@ export default function ReaderScreen({ route, navigation }: Props) {
         <View style={{ flex: 1 }}>
           <WebView
             ref={(r) => { richRefs.current[doc.uri] = r; }}
+            key={rt.id}
             originWhitelist={['*']}
-            source={{ html: dd.richHtml }}
+            source={{ html: themeRichHtml(dd.richHtml, { bg: rt.bg, text: rt.text, border: rt.rule, fill: rt.fill, link: theme.accent, dark: rt.dark }) }}
             style={{ flex: 1, backgroundColor: rt.bg }}
-            injectedJavaScript={`(function(){var last=0;window.addEventListener('scroll',function(){var h=document.documentElement.scrollHeight-window.innerHeight;if(h<=0)return;var f=window.scrollY/h;var n=Date.now();if(n-last>500){last=n;window.ReactNativeWebView.postMessage(JSON.stringify({t:'pos',f:f}));}},{passive:true});})();true;`}
+            injectedJavaScript={`(function(){var last=0,sy=0;window.addEventListener('scroll',function(){var h=document.documentElement.scrollHeight-window.innerHeight;if(h<=0)return;var f=window.scrollY/h;var n=Date.now();if(n-last>500){last=n;window.ReactNativeWebView.postMessage(JSON.stringify({t:'pos',f:f}));}},{passive:true});document.addEventListener('touchstart',function(e){sy=e.touches[0].clientY;},{passive:true});document.addEventListener('touchend',function(e){var dy=Math.abs((e.changedTouches[0]||{clientY:sy}).clientY-sy);if(dy<10){window.ReactNativeWebView.postMessage(JSON.stringify({t:'tap'}));}},{passive:true});})();true;`}
             onMessage={(e) => {
               try {
                 const d = JSON.parse(e.nativeEvent.data);
                 if (d && d.t === 'pos' && typeof d.f === 'number') trackScroll(doc.uri, d.f);
+                if (d && d.t === 'tap') setShowUI((v) => !v);
               } catch {}
             }}
             onLoadEnd={() => {
@@ -718,16 +752,23 @@ export default function ReaderScreen({ route, navigation }: Props) {
           />
         </View>
       ) : dd.kind === 'pages' ? (
-        <PagesView key={doc.uri} uri={doc.uri} pages={dd.pages} mdStyle={mdStyle} rules={rules} rt={rt} />
+        <View
+          style={{ flex: 1 }}
+          onTouchStart={(e) => { touchY.current = e.nativeEvent.pageY; }}
+          onTouchEnd={(e) => {
+            if (Math.abs(e.nativeEvent.pageY - touchY.current) < 10) setShowUI((v) => !v);
+          }}
+        >
+          <PagesView key={doc.uri} uri={doc.uri} pages={dd.pages} mdStyle={mdStyle} rules={rules} rt={rt} />
+        </View>
       ) : (
       <View
         style={{ flex: 1 }}
         onLayout={makeLayout(doc.uri, dd.chunks.length, dd.rev)}
         onTouchStart={(e) => { touchY.current = e.nativeEvent.pageY; }}
         onTouchEnd={(e) => {
-          // Тап без скролла — вкл/выкл иммерсив. Свайпы не трогаем.
-          // В .smd тапы заняты интерактивом блоков — иммерсив не трогаем.
-          if (dd.kind !== 'smd' && Math.abs(e.nativeEvent.pageY - touchY.current) < 10) setShowUI((v) => !v);
+          // Тап без скролла — вкл/выкл иммерсив, во всех форматах.
+          if (Math.abs(e.nativeEvent.pageY - touchY.current) < 10) setShowUI((v) => !v);
         }}
       >
         {dd.kind === 'sheet' && dd.sheets.length > 1 && (
@@ -753,6 +794,14 @@ export default function ReaderScreen({ route, navigation }: Props) {
         <FlatList
           ref={(r) => { listRefs.current[doc.uri] = r; }}
           key={remountKey + '|' + doc.uri}
+          // Стартовое смещение считаем синхронно: при переключении документ
+          // открывается сразу там, где его оставили — без рывка с начала.
+          contentOffset={{ x: 0, y: (() => {
+            const f = getPositionSync(doc.uri);
+            const ch = contentH.current[doc.uri] ?? 0;
+            const vh = viewportH.current[doc.uri] ?? 0;
+            return f > 0 && ch > vh ? f * (ch - vh) : 0;
+          })() }}
           data={dd.chunks}
           keyExtractor={(_, i) => String(i)}
           style={s.scroll}
@@ -767,7 +816,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
                   rt={rt}
                   fontSize={fontSize}
                   docKey={doc.uri}
-                  onAskTask={(t) => navigation.navigate('TaskChat', t)}
+                  onAskTask={(t) => { setShowUI(true); navigation.navigate('TaskChat', t); }}
                   onBlockLayout={(i, y) => {
                     const m = smdBlockY.current[doc.uri] ?? {};
                     m[i] = y;
@@ -804,31 +853,24 @@ export default function ReaderScreen({ route, navigation }: Props) {
     </View>
   );
 
-  // Превью открытых документов для свитчера: первые строки текста.
+  // Превью для свитчера: берём из уже разобранного кэша, диск не трогаем —
+  // поэтому свитчер открывается мгновенно.
   const [previews, setPreviews] = useState<Record<string, string>>({});
   useEffect(() => {
-    if (!showRecent) return;
-    let alive = true;
-    (async () => {
-      const out: Record<string, string> = {};
-      for (const d of docs) {
-        try {
-          const raw = await FileSystem.readAsStringAsync(d.uri);
-          const clean = raw
-            .replace(/^---[\s\S]*?---/, '')
-            .replace(/```[\s\S]*?```/g, ' ')
-            .replace(/[#>*_`~\-]+/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-          out[d.uri] = clean.slice(0, 220);
-        } catch {
-          out[d.uri] = '';
-        }
-      }
-      if (alive) setPreviews(out);
-    })();
-    return () => { alive = false; };
-  }, [showRecent, docs]);
+    const out: Record<string, string> = {};
+    for (const d of docs) {
+      const c = docCache.get(d.uri);
+      if (!c) continue;
+      out[d.uri] = c.content
+        .replace(/^---[\s\S]*?---/, '')
+        .replace(/```[\s\S]*?```/g, ' ')
+        .replace(/[#>*_`~\-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 220);
+    }
+    setPreviews(out);
+  }, [docs]);
 
   return (
     <View style={[s.container, { backgroundColor: rt.bg }]}>
@@ -1158,12 +1200,12 @@ function styles(insets: any) {
       flexDirection: 'row', alignItems: 'center', gap: 2,
       paddingTop: insets.top + 6, paddingHorizontal: 6, paddingBottom: 6,
     },
-    backBtn: { padding: 6 },
+    backBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
     titleCol: { flex: 1, paddingHorizontal: 2 },
     title: { ...tp.headline },
     meta: { ...tp.caption, marginTop: 1 },
     aa: { ...tp.subheadStrong, letterSpacing: 0.2 },
-    iconBtn: { padding: 8 },
+    iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
     scroll: { flex: 1 },
     content: { paddingHorizontal: 22, paddingTop: 8, paddingBottom: 120 },
     pane: { flex: 1 },

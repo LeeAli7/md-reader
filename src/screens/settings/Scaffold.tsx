@@ -124,7 +124,7 @@ const st = StyleSheet.create({
   headerBg: { ...StyleSheet.absoluteFillObject },
   headerLine: { position: 'absolute', left: 0, right: 0, bottom: 0, height: StyleSheet.hairlineWidth },
   headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
-  backBtn: { padding: 8 },
+  backBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginLeft: -10 },
   compact: { flex: 1, textAlign: 'center', ...tp.headline, fontFamily: uiFontOf(600), marginRight: 42 },
   groupTitle: { ...tp.footnote, fontFamily: uiFontOf(500), paddingLeft: 4, marginBottom: 6 },
   group: { borderRadius: 20, overflow: 'hidden', paddingHorizontal: 16 },
