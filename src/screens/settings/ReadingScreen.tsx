@@ -1,9 +1,9 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../hooks/useTheme';
 import { useAppSettingsOpt } from '../../context/AppSettingsContext';
-import { readingThemes, DEFAULT_READING_THEME } from '../../theme/tokens';
+import { readingThemes, getReadingTheme } from '../../theme/tokens';
 import { readingFonts, getReadingFont, DEFAULT_FONT_ID } from '../../theme/fonts';
 import { type as tp, font as uiFontOf } from '../../theme/type';
 import { Group, SettingsScaffold } from './Scaffold';
@@ -45,23 +45,28 @@ export default function ReadingScreen({ navigation }: any) {
   const lineHeight = app?.lineHeight ?? 1.7;
   const contentWidth = app?.contentWidth ?? 720;
   const fontId = app?.font ?? DEFAULT_FONT_ID;
-  const themeId = app?.readingTheme ?? DEFAULT_READING_THEME;
+  const themeId = app?.readingTheme ?? 'auto';
   const face = getReadingFont(fontId);
+  const scheme = useColorScheme();
+  // «Системная» живёт первой карточкой: лист следует теме телефона.
+  const autoSheet = getReadingTheme(scheme === 'dark' ? 'blood' : 'light');
+  const options = [{ ...autoSheet, id: 'auto', name: 'Системная' }, ...readingThemes];
+  const resolved = getReadingTheme(themeId === 'auto' ? (scheme === 'dark' ? 'blood' : 'light') : themeId);
 
   return (
     <SettingsScaffold title="Чтение" onBack={() => navigation.goBack()}>
       <Text style={[st.lead, { color: theme.textSecondary }]}>Как выглядит книга, когда вы её открываете.</Text>
 
       {/* Живой пример: сразу видно и шрифт, и интервал, и ширину */}
-      <View style={[st.previewCard, { backgroundColor: isDark ? '#141416' : '#F7F6F3' }]}>
-        <Text style={[st.previewText, { color: isDark ? '#F2F0EE' : '#121110', fontSize, lineHeight: fontSize * lineHeight, fontFamily: face.family }]}>
+      <View style={[st.previewCard, { backgroundColor: resolved.bg, borderColor: resolved.dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)' }]}>
+        <Text style={[st.previewText, { color: resolved.text, fontSize, lineHeight: fontSize * lineHeight, fontFamily: face.family }]}>
           Тишина в библиотеке держится не на запретах, а на уважении к чужому вниманию.
         </Text>
       </View>
 
       <Group title="Лист">
         <View style={st.themeGrid}>
-          {readingThemes.map((rt) => {
+          {options.map((rt) => {
             const active = themeId === rt.id;
             return (
               <Pressable

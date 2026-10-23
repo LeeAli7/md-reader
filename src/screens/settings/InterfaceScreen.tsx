@@ -8,9 +8,9 @@ import { type as tp } from '../../theme/type';
 import { Group, Row, SettingsScaffold } from './Scaffold';
 
 const MODES: { key: ThemeMode; label: string; sub: string }[] = [
+  { key: 'auto', label: 'Как в системе', sub: 'Переключается вместе с телефоном' },
   { key: 'light', label: 'Светлая', sub: 'Чистый iOS, белый лист' },
   { key: 'dark', label: 'Тёмная', sub: 'Чёрный лист, белый текст' },
-  { key: 'auto', label: 'Как в системе', sub: 'Переключается вместе с телефоном' },
 ];
 
 export default function InterfaceScreen({ navigation }: any) {

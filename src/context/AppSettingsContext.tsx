@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useColorScheme } from 'react-native';
 import { defaultSizes, DEFAULT_FONT_ID, getReadingFont } from '../theme/fonts';
 import { getReadingTheme, DEFAULT_READING_THEME } from '../theme/tokens';
 
@@ -41,9 +42,9 @@ interface Ctx extends Settings {
 }
 
 const DEFAULTS: Settings = {
-  // Интерфейс по умолчанию — чистый iOS (светлый). Тёмная включается вручную.
-  themeMode: 'light',
-  readingTheme: DEFAULT_READING_THEME,
+  // По умолчанию — как в системе: светлая у светлых, тёмная у тёмных.
+  themeMode: 'auto',
+  readingTheme: 'auto',
   font: DEFAULT_FONT_ID,
   fontSize: defaultSizes.fontSize,
   lineHeight: defaultSizes.lineHeight,
@@ -74,9 +75,19 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
           loadStr(KEYS.lineHeight),
           AsyncStorage.getItem(KEYS.contentWidth),
         ]);
+        // Разовая миграция: у кого тема осталась нетронутым дефолтом —
+        // переводим на системную, выбор пользователя не трогаем.
+        const moved = await AsyncStorage.getItem('md2_theme_default_v2');
+        let mode: ThemeMode = tm === 'light' || tm === 'dark' ? tm : 'auto';
+        let rtId = rt ? getReadingTheme(rt).id : 'auto';
+        if (!moved) {
+          if (mode === 'light') mode = 'auto';
+          if (rtId === 'light') rtId = 'auto';
+          AsyncStorage.setItem('md2_theme_default_v2', '1').catch(() => {});
+        }
         setS({
-          themeMode: tm === 'light' || tm === 'dark' ? tm : tm === 'auto' ? 'auto' : DEFAULTS.themeMode,
-          readingTheme: rt ? getReadingTheme(rt).id : DEFAULTS.readingTheme,
+          themeMode: mode,
+          readingTheme: rtId,
           // Миграция со старого списка из 15: имя семейства или старый id → новый id.
           font: getReadingFont(f ?? undefined).id,
           fontSize: fs ? Number(fs) || DEFAULTS.fontSize : DEFAULTS.fontSize,
@@ -132,7 +143,9 @@ export function useReadingStyle() {
   const font = app?.font ?? DEFAULTS.font;
   const face = getReadingFont(font);
   const contentWidth = app?.contentWidth ?? defaultSizes.contentWidth;
-  const readingTheme = app?.readingTheme ?? DEFAULTS.readingTheme;
+  const scheme = useColorScheme();
+  const chosen = app?.readingTheme ?? 'auto';
+  const readingTheme = chosen === 'auto' ? (scheme === 'dark' ? 'blood' : 'light') : chosen;
   const sheet = getReadingTheme(readingTheme);
   const remountKey = `${face.id}|${fontSize}|${lineHeight}|${readingTheme}`;
   return {
