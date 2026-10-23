@@ -4,16 +4,16 @@
     "expo-font"
   ],
   "icon": "./assets/icon.png",
-  "backgroundColor": "#0D1117",
+  "backgroundColor": "#FFFFFF",
   "splash": {
     "image": "./assets/splash.png",
     "resizeMode": "cover",
-    "backgroundColor": "#0D1117"
+    "backgroundColor": "#FFFFFF"
   },
   "android": {
     "adaptiveIcon": {
       "foregroundImage": "./assets/adaptive-icon.png",
-      "backgroundColor": "#0D1117"
+      "backgroundColor": "#FFFFFF"
     },
     "intentFilters": [
       {
@@ -141,5 +141,6 @@
   "slug": "supreader",
   "ios": {
     "bundleIdentifier": "com.supreader.app"
-  }
+  },
+  "userInterfaceStyle": "automatic"
 }

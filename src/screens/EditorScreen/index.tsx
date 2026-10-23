@@ -111,15 +111,15 @@ export default function EditorScreen({ route, navigation }: Props) {
       <Markdown
         style={{
           body: { color: theme.text, fontSize: 15, lineHeight: 23 },
-          heading1: { color: theme.text, fontSize: 26, fontWeight: '700', marginBottom: 10 },
-          heading2: { color: theme.text, fontSize: 21, fontWeight: '600', marginBottom: 8 },
-          heading3: { color: theme.text, fontSize: 18, fontWeight: '600', marginBottom: 6 },
+          heading1: { color: theme.text, fontSize: 26, fontFamily: 'Inter-Bold', marginBottom: 10 },
+          heading2: { color: theme.text, fontSize: 21, fontFamily: 'Inter-SemiBold', marginBottom: 8 },
+          heading3: { color: theme.text, fontSize: 18, fontFamily: 'Inter-SemiBold', marginBottom: 6 },
           link: { color: theme.accent },
           code_inline: { backgroundColor: theme.accentSoft, color: theme.text, borderRadius: 4, paddingHorizontal: 5 },
           fence: { backgroundColor: theme.accentSoft, color: theme.text, borderRadius: 8, padding: 12, marginVertical: 8 },
           code_block: { backgroundColor: theme.accentSoft, color: theme.text, borderRadius: 8, padding: 12, marginVertical: 8 },
           blockquote: { borderLeftColor: theme.accent, borderLeftWidth: 3, paddingLeft: 12, marginVertical: 8 },
-          table: { borderWidth: 1, borderColor: theme.border, borderRadius: 8, marginVertical: 8 },
+          table: { borderWidth: 1, borderColor: theme.divider, borderRadius: 8, marginVertical: 8 },
           list_item: { color: theme.text, fontSize: 15, lineHeight: 23 },
         }}
       >
@@ -228,7 +228,7 @@ function ToolbarBtn({ icon, label, onPress, theme }: { icon: string; label: stri
       ]}
     >
       <Ionicons name={icon as never} size={16} color={theme.accent} />
-      <Text style={{ color: theme.accent, fontSize: 13, fontWeight: '600' }}>{label}</Text>
+      <Text style={{ color: theme.accent, fontSize: 13, fontFamily: 'Inter-SemiBold' }}>{label}</Text>
     </Pressable>
   );
 }
@@ -240,21 +240,21 @@ function styles(theme: any, insets: any) {
     header: {
       flexDirection: 'row', alignItems: 'center',
       paddingTop: insets.top + 8, paddingHorizontal: 12, paddingBottom: 8,
-      backgroundColor: theme.surface, borderBottomWidth: 1, borderBottomColor: theme.border,
+      backgroundColor: theme.bg, borderBottomWidth: 0.5, borderBottomColor: theme.divider,
     },
     backBtn: { padding: 8 },
     titleWrap: { flex: 1, marginHorizontal: 4 },
-    title: { fontSize: 16, fontWeight: '600' },
+    title: { fontSize: 16.5, fontFamily: 'Inter-SemiBold', letterSpacing: -0.2 },
     status: { fontSize: 12, marginTop: 1 },
     saveBtn: { padding: 8 },
     modes: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: theme.surface },
     modeBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99 },
-    modeText: { fontSize: 13, fontWeight: '500' },
+    modeText: { fontSize: 13, fontFamily: 'Inter-Medium' },
     input: {
       flex: 1, textAlignVertical: 'top', padding: 16,
       fontSize: 15, lineHeight: 23, color: theme.text, backgroundColor: theme.bg,
     },
-    inputHalf: { flex: 1, borderBottomWidth: 1, borderBottomColor: theme.border },
+    inputHalf: { flex: 1, borderBottomWidth: 1, borderBottomColor: theme.divider },
     splitWrap: { flex: 1 },
     preview: { flex: 1, backgroundColor: theme.bg },
     previewHalf: { flex: 1, backgroundColor: theme.surfaceAlt },
@@ -262,7 +262,7 @@ function styles(theme: any, insets: any) {
     toolbar: {
       flexDirection: 'row', gap: 8, paddingHorizontal: 12,
       paddingVertical: 10, paddingBottom: insets.bottom + 10,
-      backgroundColor: theme.surface, borderTopWidth: 1, borderTopColor: theme.border,
+      backgroundColor: theme.bg, borderTopWidth: 0.5, borderTopColor: theme.divider,
     },
   });
 }

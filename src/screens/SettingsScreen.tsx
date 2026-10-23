@@ -3,17 +3,18 @@ import { View, Text, Pressable, StyleSheet, ScrollView, Alert, TextInput } from 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
-import { readingThemes } from '../theme/tokens';
-import { fonts } from '../theme/fonts';
+import { readingThemes, DEFAULT_READING_THEME } from '../theme/tokens';
+import { readingFonts, getReadingFont, DEFAULT_FONT_ID } from '../theme/fonts';
+import { type as tp, font as uiFontOf } from '../theme/type';
 import { useAppSettingsOpt } from '../context/AppSettingsContext';
 import type { ThemeMode } from '../context/AppSettingsContext';
 import { exportVaultBackup } from '../utils/backup';
 import { AI_DEFAULTS, checkConnection, getAiConfig, saveAiConfig } from '../smd/ai';
 
-const MODES: { key: ThemeMode; label: string; icon: string }[] = [
-  { key: 'light', label: 'Светлая', icon: 'sunny-outline' },
-  { key: 'dark', label: 'Тёмная', icon: 'moon-outline' },
-  { key: 'auto', label: 'Авто', icon: 'contrast-outline' },
+const MODES: { key: ThemeMode; label: string; sub: string }[] = [
+  { key: 'light', label: 'iOS', sub: 'Светлый' },
+  { key: 'dark', label: 'КРОВЬ', sub: 'Тёмный' },
+  { key: 'auto', label: 'Система', sub: 'Как в телефоне' },
 ];
 
 export default function SettingsScreen({ navigation }: any) {
@@ -25,8 +26,9 @@ export default function SettingsScreen({ navigation }: any) {
   const fontSize = app?.fontSize ?? 16;
   const lineHeight = app?.lineHeight ?? 1.7;
   const contentWidth = app?.contentWidth ?? 720;
-  const selectedFont = app?.font ?? 'Inter';
-  const selectedTheme = app?.readingTheme ?? 'default';
+  const selectedFont = app?.font ?? DEFAULT_FONT_ID;
+  const selectedTheme = app?.readingTheme ?? DEFAULT_READING_THEME;
+  const selFace = getReadingFont(selectedFont);
 
   const step = (fn: () => void) => fn;
   const [backingUp, setBackingUp] = useState(false);
@@ -53,8 +55,8 @@ export default function SettingsScreen({ navigation }: any) {
         <Text style={s.heading}>Настройки</Text>
       </View>
 
-      {/* Тема приложения */}
-      <Text style={s.sectionTitle}>Оформление</Text>
+      {/* Тема приложения: два интерфейса */}
+      <Text style={s.sectionTitle}>Интерфейс</Text>
       <View style={s.modeRow}>
         {MODES.map((m) => {
           const active = mode === m.key;
@@ -62,47 +64,60 @@ export default function SettingsScreen({ navigation }: any) {
             <Pressable
               key={m.key}
               onPress={() => setMode(m.key)}
-              style={[s.modeCard, { borderColor: active ? theme.accent : theme.border, backgroundColor: active ? theme.accentSoft : theme.surface }]}
+              style={[s.modeCard, { borderColor: active ? theme.text : theme.divider, backgroundColor: theme.surface }]}
             >
-              <Ionicons name={m.icon as any} size={22} color={active ? theme.accent : theme.textSecondary} />
-              <Text style={[s.modeLabel, { color: active ? theme.accent : theme.text }]}>{m.label}</Text>
+              <Text style={[s.modeLabel, { color: theme.text }]}>{m.label}</Text>
+              <Text style={[s.modeSub, { color: theme.textSecondary }]}>{m.sub}</Text>
+              {active && (
+                <View style={[s.modeCheck, { backgroundColor: theme.text }]}>
+                  <Ionicons name="checkmark" size={11} color={theme.onAccent} />
+                </View>
+              )}
             </Pressable>
           );
         })}
       </View>
-      <Text style={s.hint}>Сейчас: {isDark ? 'тёмная' : 'светлая'}{mode === 'auto' ? ' (по системе)' : ''}</Text>
+      <Text style={s.hint}>Сейчас: {isDark ? 'КРОВЬ' : 'iOS'}{mode === 'auto' ? ' · по системе' : ''}</Text>
 
-      {/* Тема чтения */}
-      <Text style={[s.sectionTitle, { marginTop: 28 }]}>Тема чтения</Text>
+      {/* Тема листа при чтении */}
+      <Text style={[s.sectionTitle, { marginTop: 28 }]}>Лист при чтении</Text>
       <View style={s.themeGrid}>
-        {Object.entries(readingThemes).map(([key, rt]) => {
-          const active = selectedTheme === key;
+        {readingThemes.map((rt) => {
+          const active = selectedTheme === rt.id;
           return (
             <Pressable
-              key={key}
-              onPress={() => app?.setReadingTheme(key)}
-              style={[s.themeCard, { backgroundColor: rt.bg, borderColor: active ? theme.accent : rt.text + '25', borderWidth: active ? 2 : 1 }]}
+              key={rt.id}
+              onPress={() => app?.setReadingTheme(rt.id)}
+              style={[
+                s.themeCard,
+                { backgroundColor: rt.bg, borderColor: active ? theme.text : rt.dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)' },
+              ]}
             >
-              <Text style={{ color: rt.text, fontSize: 16, fontWeight: '700' }}>Аа</Text>
-              <Text style={{ color: rt.text, fontSize: 11, marginTop: 2 }} numberOfLines={1}>{rt.name}</Text>
-              {active && <Ionicons name="checkmark-circle" size={16} color={theme.accent} style={s.check} />}
+              <Text style={{ color: rt.text, fontSize: 19, fontFamily: selFace.family }}>Аа</Text>
+              <View style={[s.themeRule, { backgroundColor: rt.muted }]} />
+              <Text style={{ color: rt.muted, fontSize: 10, marginTop: 3 }} numberOfLines={1}>{rt.name}</Text>
             </Pressable>
           );
         })}
       </View>
 
-      {/* Шрифт */}
-      <Text style={[s.sectionTitle, { marginTop: 28 }]}>Шрифт: {selectedFont}</Text>
-      <View style={s.fontWrap}>
-        {[...fonts].map((f) => {
-          const active = selectedFont === f;
+      {/* Шрифт — каждый пункт набран своим шрифтом */}
+      <Text style={[s.sectionTitle, { marginTop: 28 }]}>Шрифт чтения</Text>
+      <View style={[s.card, { backgroundColor: theme.surface }]}>
+        {readingFonts.map((f, i) => {
+          const active = selectedFont === f.id;
           return (
             <Pressable
-              key={f}
-              onPress={() => app?.setFont(f)}
-              style={[s.fontChip, { borderColor: active ? theme.accent : theme.border, backgroundColor: active ? theme.accentSoft : 'transparent' }]}
+              key={f.id}
+              onPress={() => app?.setFont(f.id)}
+              style={[s.fontRow, i < readingFonts.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.divider }]}
             >
-              <Text style={[s.fontText, { color: active ? theme.accent : theme.text }]}>{f}</Text>
+              <Text style={[s.fontSample, { color: theme.text, fontFamily: f.family }]} numberOfLines={1}>Aa Бб</Text>
+              <View style={s.fontInfo}>
+                <Text style={[s.fontName, { color: theme.text }]}>{f.name}</Text>
+                <Text style={[s.fontNote, { color: theme.textSecondary }]}>{f.note}</Text>
+              </View>
+              {active && <Ionicons name="checkmark" size={19} color={theme.text} />}
             </Pressable>
           );
         })}
@@ -171,7 +186,7 @@ export default function SettingsScreen({ navigation }: any) {
         ])}
         style={[s.resetBtn, { borderColor: theme.border }]}
       >
-        <Ionicons name="refresh-outline" size={18} color="#EF4444" />
+        <Ionicons name="refresh-outline" size={18} color={theme.red} />
         <Text style={s.resetText}>Сбросить всё</Text>
       </Pressable>
 
@@ -268,27 +283,35 @@ function AiSettings({ theme, s }: { theme: any; s: any }) {
 function styles(theme: any, insets: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.bg },
-    content: { padding: 20, paddingTop: insets.top + 20, paddingBottom: 60 },
-    headRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, marginLeft: -8 },
+    content: { paddingHorizontal: 20, paddingTop: insets.top + 8, paddingBottom: 80 },
+    headRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 22, marginLeft: -8 },
     backBtn: { padding: 8 },
-    heading: { fontSize: 24, fontWeight: '700', color: theme.text },
-    sectionTitle: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
-    hint: { fontSize: 12, color: theme.textSecondary, marginTop: 8 },
+    heading: { ...tp.largeTitle, color: theme.text, letterSpacing: -0.6 },
+    sectionTitle: { ...tp.footnote, fontFamily: uiFontOf(500), color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 },
+    hint: { ...tp.caption, color: theme.textSecondary, marginTop: 8 },
     modeRow: { flexDirection: 'row', gap: 10 },
-    modeCard: { flex: 1, borderWidth: 1.5, borderRadius: 14, paddingVertical: 14, alignItems: 'center', gap: 6 },
-    modeLabel: { fontSize: 13, fontWeight: '500' },
-    themeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-    themeCard: { width: '30%', borderRadius: 12, padding: 10, alignItems: 'center', minHeight: 74, justifyContent: 'center' },
-    check: { position: 'absolute', top: 6, right: 6 },
-    fontWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    fontChip: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
-    fontText: { fontSize: 13 },
+    modeCard: { flex: 1, borderWidth: 1, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 12, gap: 2 },
+    modeLabel: { ...tp.headline },
+    modeSub: { ...tp.caption },
+    modeCheck: {
+      position: 'absolute', top: 8, right: 8, width: 17, height: 17, borderRadius: 9,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    themeGrid: { flexDirection: 'row', gap: 8 },
+    themeCard: { flex: 1, borderRadius: 12, borderWidth: 1, padding: 9, minHeight: 82, justifyContent: 'center' },
+    themeRule: { height: 1.5, borderRadius: 1, marginTop: 5, opacity: 0.5 },
+    card: { borderRadius: 14, overflow: 'hidden', paddingHorizontal: 14 },
+    fontRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+    fontSample: { fontSize: 17, width: 54 },
+    fontInfo: { flex: 1 },
+    fontName: { ...tp.callout, fontFamily: uiFontOf(500) },
+    fontNote: { ...tp.caption, marginTop: 1 },
     stepRow: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: theme.surface, borderRadius: 14, padding: 14 },
     stepBtn: { borderWidth: 1, borderRadius: 10, padding: 8 },
-    stepVal: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '600' },
+    stepVal: { flex: 1, textAlign: 'center', ...tp.headline },
     preview: { flex: 1, textAlign: 'center' },
     resetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderRadius: 14, paddingVertical: 14, marginTop: 28 },
-    resetText: { fontSize: 15, color: '#EF4444', fontWeight: '500' },
+    resetText: { ...tp.callout, fontFamily: uiFontOf(500), color: theme.red },
     backupBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderRadius: 14, paddingVertical: 14, marginTop: 28 },
     backupText: { fontSize: 15, fontWeight: '600' },
     aiInput: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },

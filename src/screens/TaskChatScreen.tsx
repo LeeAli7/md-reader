@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import { useTheme } from '../hooks/useTheme';
+import { type as tp } from '../theme/type';
 import { useAppSettingsOpt } from '../context/AppSettingsContext';
 import { askTask, chatIdFor, loadChat, saveChat, type AttachedImage, type ChatMsg } from '../smd/ai';
 import { prettifySpans } from '../smd/smdRender';
@@ -46,12 +47,12 @@ export default function TaskChatScreen({ navigation, route }: any) {
     paragraph: { marginVertical: 4 },
     strong: { fontWeight: '700' as const, color: theme.text },
     em: { fontStyle: 'italic' as const, color: theme.text },
-    code_inline: { fontFamily: 'monospace', backgroundColor: theme.text + '12', color: theme.text },
-    fence: { backgroundColor: theme.text + '0D', borderColor: theme.border, borderWidth: 1 },
-    table: { borderWidth: 1, borderColor: theme.border },
+    code_inline: { fontFamily: 'JetBrainsMono', backgroundColor: theme.text + '12', color: theme.text },
+    fence: { backgroundColor: theme.text + '0D', borderColor: theme.divider, borderWidth: 1 },
+    table: { borderWidth: 1, borderColor: theme.divider },
     th: { padding: 6, fontWeight: '700' as const },
     td: { padding: 6 },
-    tr: { borderBottomWidth: 1, borderColor: theme.border },
+    tr: { borderBottomWidth: 1, borderColor: theme.divider },
   };
 
   useEffect(() => {
@@ -132,7 +133,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
 
   return (
     <View style={[s.container, { backgroundColor: theme.bg, paddingTop: insets.top }]}>
-      <View style={[s.head, { borderBottomColor: theme.border }]}>
+      <View style={[s.head, { borderBottomColor: theme.divider }]}>
         <Pressable onPress={() => navigation?.goBack()} style={s.backBtn} hitSlop={8}>
           <Ionicons name="chevron-back" size={24} color={theme.text} />
         </Pressable>
@@ -148,7 +149,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
         contentContainerStyle={{ padding: 14, paddingBottom: 20 }}
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
       >
-        <View style={[s.taskCard, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+        <View style={[s.taskCard, { borderColor: theme.divider, backgroundColor: theme.surface }]}>
           <Text style={[s.taskLabel, { color: theme.accent }]}>Задача (контекст помню)</Text>
           <Text style={{ color: theme.text, fontSize: fontSize * 0.9, lineHeight: 20 }} numberOfLines={4}>
             {task}
@@ -159,7 +160,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
             key={i}
             style={[s.msg, m.role === 'user'
               ? { alignSelf: 'flex-end', backgroundColor: theme.accentSoft }
-              : { alignSelf: 'flex-start', backgroundColor: theme.surface }]}
+              : { alignSelf: 'flex-start', backgroundColor: 'transparent', paddingHorizontal: 0 }]}
           >
             {m.role === 'user' ? (
               <Text style={{ color: theme.text, fontSize: fontSize * 0.94, lineHeight: 21 }}>{m.text}</Text>
@@ -183,7 +184,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
             <Pressable
               key={i}
               onPress={() => setAtt((p) => p.filter((_, k) => k !== i))}
-              style={[s.chip, { borderColor: theme.border, backgroundColor: theme.surface }]}
+              style={[s.chip, { borderColor: theme.divider, backgroundColor: theme.surface }]}
             >
               <Ionicons name={a.image ? 'image-outline' : 'document-text-outline'} size={14} color={theme.accent} />
               <Text style={{ color: theme.text, fontSize: 12 }} numberOfLines={1}>{a.name}</Text>
@@ -193,12 +194,12 @@ export default function TaskChatScreen({ navigation, route }: any) {
         </View>
       )}
 
-      <View style={[s.bar, { borderTopColor: theme.border, paddingBottom: Math.max(10, insets.bottom) }]}>
+      <View style={[s.bar, { borderTopColor: theme.divider, backgroundColor: theme.bg, paddingBottom: Math.max(10, insets.bottom) }]}>
         <Pressable onPress={pickFile} hitSlop={8} style={s.iconBtn}>
           <Ionicons name="attach-outline" size={24} color={theme.accent} />
         </Pressable>
         <TextInput
-          style={[s.input, { borderColor: theme.border, color: theme.text, fontSize: fontSize * 0.94 }]}
+          style={[s.input, { backgroundColor: theme.fill, color: theme.text, fontSize: fontSize * 0.94 }]}
           placeholder="Спроси по задаче…"
           placeholderTextColor={theme.textSecondary}
           value={q}
@@ -223,14 +224,14 @@ export default function TaskChatScreen({ navigation, route }: any) {
 
 const s = StyleSheet.create({
   container: { flex: 1 },
-  head: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, paddingHorizontal: 8, paddingVertical: 8, gap: 4 },
+  head: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 0.5, paddingHorizontal: 8, paddingVertical: 6, gap: 4 },
   backBtn: { padding: 8 },
-  title: { flex: 1, fontWeight: '600' },
-  taskCard: { borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 10 },
-  taskLabel: { fontSize: 12, fontWeight: '700', marginBottom: 4 },
-  msg: { maxWidth: '88%', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8 },
+  title: { flex: 1, ...tp.headline },
+  taskCard: { borderRadius: 14, padding: 12, marginBottom: 14 },
+  taskLabel: { ...tp.caption, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 5 },
+  msg: { maxWidth: '88%', borderRadius: 18, paddingHorizontal: 13, paddingVertical: 9, marginBottom: 8 },
   bar: { flexDirection: 'row', alignItems: 'flex-end', borderTopWidth: 1, paddingHorizontal: 8, paddingTop: 8, gap: 4 },
   iconBtn: { padding: 8 },
-  input: { flex: 1, borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8, maxHeight: 110 },
+  input: { flex: 1, borderRadius: 18, paddingHorizontal: 13, paddingVertical: 8, maxHeight: 110 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 5, maxWidth: 200 },
 });

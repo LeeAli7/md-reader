@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, FlatList, Pressable, StyleSheet, Alert,
   TextInput, Modal, Dimensions, NativeSyntheticEvent, NativeTouchEvent,
@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../hooks/useTheme';
+import { type as tp, font as uiFontOf } from '../theme/type';
 import { FileTypeIcon } from '../components/FileTypeIcon';
 import { TagChips } from '../components/TagChips';
 import { Popover } from '../components/Popover';
@@ -43,6 +44,36 @@ interface FolderNode {
 }
 
 const MD_READER_DIR = FileSystem.documentDirectory + 'md-reader/';
+
+const TRASH_DIR = MD_READER_DIR + '.trash/';
+
+// Удаление в корзину папки: файл можно вернуть кнопкой «Вернуть»,
+// и он не исчезает из «Недавних» мгновенно и безвозвратно.
+async function moveToTrash(uri: string): Promise<string> {
+  await FileSystem.makeDirectoryAsync(TRASH_DIR, { intermediates: true });
+  const name = uri.replace(/\/$/, '').split('/').pop() || 'item';
+  const dest = await uniquePath(TRASH_DIR, name);
+  await FileSystem.moveAsync({ from: uri, to: dest });
+  return dest;
+}
+
+
+// Свободное имя в папке: «Файл.md» → «Файл (1).md». Без перезаписи чужого файла.
+async function uniquePath(dir: string, name: string): Promise<string> {
+  const dot = name.lastIndexOf('.');
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : '';
+  for (let i = 0; i < 100; i++) {
+    const candidate = dir + (i === 0 ? name : `${stem} (${i})${ext}`);
+    try {
+      const info = await FileSystem.getInfoAsync(candidate);
+      if (!info.exists) return candidate;
+    } catch {
+      return candidate;
+    }
+  }
+  return dir + `${stem}-${Date.now()}${ext}`;
+}
 
 // Дерево папок — движок (src/utils/folderTree.ts).
 async function loadFolderTree(): Promise<FolderNode[] | null> {
@@ -118,6 +149,26 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const [moveTree, setMoveTree] = useState<FolderNode[] | null>(null);
   const [moveView, setMoveView] = useState<'tree' | 'nav'>('tree');
   const [moveSubs, setMoveSubs] = useState<FileEntry[]>([]);
+  // iOS-шторки действий вместо попапов у кнопок
+  const [showCreate, setShowCreate] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  // Удаление безвозвратное только из корзины; здесь — откат и тост на 6 секунд.
+  const [undo, setUndo] = useState<{ label: string; moves: { from: string; to: string }[] } | null>(null);
+  const undoTimer = useRef<any>(null);
+  const offerUndo = (label: string, moves: { from: string; to: string }[]) => {
+    setUndo({ label, moves });
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => setUndo(null), 6000);
+  };
+  const undoDelete = async () => {
+    if (!undo) return;
+    for (const m of undo.moves) {
+      try { await FileSystem.moveAsync({ from: m.to, to: m.from }); } catch {}
+    }
+    setUndo(null);
+    loadDir(currentPath);
+    loadMeta();
+  };
 
   const loadDir = useCallback(async (path: string) => {
     try {
@@ -268,20 +319,21 @@ export default function FileBrowserScreen({ navigation }: Props) {
 
   const deleteSelected = () => {
     Alert.alert(
-      `Удалить ${selected.size} файл(ов)?`,
-      'Это действие необратимо',
+      `Удалить ${selected.size}?`,
+      'Файлы уйдут в корзину — можно будет вернуть.',
       [
         { text: 'Отмена', style: 'cancel' },
         {
           text: 'Удалить', style: 'destructive',
           onPress: async () => {
+            const moves: { from: string; to: string }[] = [];
             for (const uri of selected) {
-              await FileSystem.deleteAsync(uri, { idempotent: true });
-              await purgeMeta(uri);
+              try { moves.push({ from: uri, to: await moveToTrash(uri) }); await purgeMeta(uri); } catch {}
             }
             cancelSelecting();
             loadDir(currentPath);
             loadMeta();
+            if (moves.length) offerUndo(`Удалено: ${moves.length}`, moves);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
           },
         },
@@ -310,7 +362,8 @@ export default function FileBrowserScreen({ navigation }: Props) {
       const res = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
       if (!res.canceled && res.assets[0]) {
         const file = res.assets[0];
-        const dest = currentPath + file.name;
+        // Не перезаписываем одноимённый файл — даём суффикс.
+        const dest = await uniquePath(currentPath, file.name);
         await FileSystem.copyAsync({ from: file.uri, to: dest });
         loadDir(currentPath);
       }
@@ -322,14 +375,17 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const deleteEntry = (entry: FileEntry) => {
     Alert.alert(
       entry.isDir ? 'Удалить папку?' : 'Удалить файл?',
-      entry.name,
+      `${entry.name}\nФайл уйдёт в корзину — можно будет вернуть.`,
       [
         { text: 'Отмена', style: 'cancel' },
         {
           text: 'Удалить', style: 'destructive',
           onPress: async () => {
-            await FileSystem.deleteAsync(entry.uri, { idempotent: true });
-            await purgeMeta(entry.uri);
+            try {
+              const trashUri = await moveToTrash(entry.uri);
+              await purgeMeta(entry.uri);
+              offerUndo(entry.name, [{ from: entry.uri, to: trashUri }]);
+            } catch (e) { console.warn('delete error', e); }
             loadDir(currentPath);
             loadMeta();
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -341,20 +397,32 @@ export default function FileBrowserScreen({ navigation }: Props) {
 
   const renameEntry = async () => {
     if (!showRename || !renameName.trim()) return;
-    const parentPath = showRename.uri.replace(/[^/]+\/?$/, '');
-    const newPath = parentPath + renameName.trim() + (showRename.isDir ? '/' : '');
-    await FileSystem.moveAsync({ from: showRename.uri, to: newPath });
-    setShowRename(null);
-    setRenameName('');
-    loadDir(currentPath);
+    const clean = renameName.trim().replace(/[\/\\]/g, '-');
+    const parentPath = showRename.uri.replace(/[^\/]+\/?$/, '');
+    const newPath = parentPath + clean + (showRename.isDir ? '/' : '');
+    if (newPath === showRename.uri) { setShowRename(null); return; }
+    try {
+      const info = await FileSystem.getInfoAsync(newPath);
+      if (info.exists) {
+        Alert.alert('Имя занято', `«${clean}» уже есть в этой папке.`);
+        return;
+      }
+      await FileSystem.moveAsync({ from: showRename.uri, to: newPath });
+      setShowRename(null);
+      setRenameName('');
+      loadDir(currentPath);
+      loadMeta();
+    } catch (e) {
+      Alert.alert('Не удалось переименовать', String(e));
+    }
   };
 
   const createNewFile = async () => {
-    const name = 'Новый файл.md';
-    const path = currentPath + name;
-    await FileSystem.writeAsStringAsync(path, `# ${name.replace('.md', '')}\n\n`);
+    const path = await uniquePath(currentPath, 'Новый файл.md');
+    const name = path.split('/').pop() || 'Новый файл.md';
+    await FileSystem.writeAsStringAsync(path, `# ${name.replace(/\.md$/, '')}\n\n`);
     const entry = { name, uri: path, isDir: false, modifiedAt: Date.now() / 1000 };
-    recordRecent(entry);
+    await recordRecent(entry);
     navigation.navigate('Reader', { uri: path, title: name });
   };
 
@@ -535,7 +603,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
               {item.size ? formatSize(item.size) + ' · ' : ''}{formatDate(item.modifiedAt)}
             </Text>
           )}
-          {!item.isDir && <TagChips tags={(tags[item.uri] || []).slice(0, 3)} theme={theme} />}
+          {!item.isDir && <TagChips tags={(tags[item.uri] || [])} theme={theme} />}
         </View>
         {!isSelecting && (
           <Pressable onPress={(e) => openPop(item, e)} hitSlop={10} style={s.itemBtn}>
@@ -551,78 +619,109 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const flatTree = moveTree ? flattenTree(moveTree, 0) : [];
 
   return (
-    <View style={s.container}>
-      {/* Header: назад только внутри папок / в мультивыборе */}
-      <View style={s.header}>
-        {(pathParts.length > 0 || isSelecting) ? (
-          <Pressable onPress={goBack} style={s.backBtn}>
-            <Ionicons name={isSelecting ? 'close' : 'chevron-back'} size={24} color={theme.text} />
-          </Pressable>
-        ) : (
-          <View style={s.backSpacer} />
-        )}
-        <Text style={[s.title, { color: theme.text }]} numberOfLines={1}>
-          {isSelecting ? `${selected.size} выбрано` : (pathParts.length > 0 ? pathParts[pathParts.length - 1] : 'Мои файлы')}
-        </Text>
-        {isSelecting ? (
-          <View style={s.headerActions}>
-            <Pressable onPress={() => openMove()} style={s.iconBtn} disabled={selected.size === 0}>
-              <Ionicons name="folder-outline" size={22} color={selected.size > 0 ? theme.accent : theme.border} />
+    <View style={[s.container, { backgroundColor: theme.bg }]}>
+      <View style={{ paddingTop: insets.top + 6, paddingHorizontal: 16 }}>
+        {/* Крупный заголовок + действия в строке навбара */}
+        <View style={s.navRow}>
+          {pathParts.length > 0 && !isSelecting ? (
+            <Pressable onPress={goBack} hitSlop={10} style={s.backChevron}>
+              <Ionicons name="chevron-back" size={26} color={theme.accent} />
             </Pressable>
-            <Pressable onPress={deleteSelected} style={s.iconBtn} disabled={selected.size === 0}>
-              <Ionicons name="trash" size={22} color={selected.size > 0 ? '#EF4444' : theme.border} />
+          ) : null}
+          <Text style={[s.navTitle, { color: theme.text }]} numberOfLines={1}>
+            {isSelecting ? `Выбрано ${selected.size}` : 'Файлы'}
+          </Text>
+          {isSelecting ? (
+            <View style={s.navActions}>
+              <Pressable onPress={cancelSelecting} hitSlop={8} style={s.navBtn}>
+                <Text style={[s.navBtnText, { color: theme.accent }]}>Готово</Text>
+              </Pressable>
+              <Pressable onPress={() => openMove()} hitSlop={8} style={s.navBtn} disabled={selected.size === 0}>
+                <Ionicons name="folder-outline" size={22} color={selected.size ? theme.accent : theme.textTertiary} />
+              </Pressable>
+              <Pressable onPress={deleteSelected} hitSlop={8} style={s.navBtn} disabled={selected.size === 0}>
+                <Ionicons name="trash-outline" size={22} color={selected.size ? theme.red : theme.textTertiary} />
+              </Pressable>
+            </View>
+          ) : (
+            <View style={s.navActions}>
+              <Pressable onPress={() => setShowCreate(true)} hitSlop={8} style={s.navBtn}>
+                <Ionicons name="add" size={26} color={theme.accent} />
+              </Pressable>
+              <Pressable onPress={() => setShowMore(true)} hitSlop={8} style={s.navBtn}>
+                <Ionicons name="ellipsis-horizontal" size={22} color={theme.accent} />
+              </Pressable>
+            </View>
+          )}
+        </View>
+
+        {/* Крошки одной строкой — вместо отдельной панели */}
+        {!isSelecting && tab === 'files' && (
+          <View style={s.crumbRow}>
+            <Pressable onPress={() => setCurrentPath(MD_READER_DIR)} hitSlop={6}>
+              <Text style={[s.crumb, { color: pathParts.length > 0 ? theme.accent : theme.textSecondary }]}>Мои файлы</Text>
             </Pressable>
+            {pathParts.map((part, i) => (
+              <React.Fragment key={i}>
+                <Text style={[s.crumb, { color: theme.textTertiary }]}>›</Text>
+                <Pressable
+                  hitSlop={6}
+                  onPress={() => setCurrentPath(MD_READER_DIR + pathParts.slice(0, i + 1).join('/') + '/')}
+                >
+                  <Text style={[s.crumb, { color: i === pathParts.length - 1 ? theme.text : theme.accent }]} numberOfLines={1}>
+                    {part}
+                  </Text>
+                </Pressable>
+              </React.Fragment>
+            ))}
           </View>
-        ) : (
-          <View style={s.headerActions}>
-            <Pressable onPress={() => { setQuery(''); setScope('files'); setSearchTag(null); setShowSearch(true); }} style={s.iconBtn}>
-              <Ionicons name="search-outline" size={22} color={theme.accent} />
-            </Pressable>
-            <Pressable onPress={() => setShowSort(!showSort)} style={s.iconBtn}>
-              <Ionicons name="swap-vertical-outline" size={22} color={theme.accent} />
-            </Pressable>
+        )}
+
+        {/* Поиск — настоящим полем, а не иконкой */}
+        {!isSelecting && (
+          <Pressable
+            onPress={() => { setQuery(''); setScope('files'); setSearchTag(null); setShowSearch(true); }}
+            style={[s.searchField, { backgroundColor: theme.fill }]}
+          >
+            <Ionicons name="search" size={17} color={theme.textSecondary} />
+            <Text style={[s.searchHint, { color: theme.textSecondary }]}>Поиск по файлам и тегам</Text>
+          </Pressable>
+        )}
+
+        {/* Строка списка: секция + сортировка текстом */}
+        {!isSelecting && (
+          <View style={s.listHead}>
+            <Text style={[s.sectionTitle, { color: theme.textSecondary }]}>
+              {tab === 'files' ? (entries.length ? `${entries.length} объектов` : 'Пусто') : `${recent.length} недавних`}
+            </Text>
+            {tab === 'files' && (
+              <Pressable onPress={() => setShowSort(!showSort)} hitSlop={8} style={s.sortBtn}>
+                <Text style={[s.sortText, { color: theme.accent }]}>
+                  {sortKey === 'name' ? 'Имя' : sortKey === 'date' ? 'Дата' : 'Размер'}
+                </Text>
+                <Ionicons name={sortAsc ? 'chevron-up' : 'chevron-down'} size={13} color={theme.accent} />
+              </Pressable>
+            )}
+          </View>
+        )}
+
+        {showSort && !isSelecting && (
+          <View style={[s.sortMenu, { backgroundColor: theme.surface, borderColor: theme.divider }]}>
+            {(['name', 'date', 'size'] as SortKey[]).map((k) => (
+              <Pressable
+                key={k}
+                onPress={() => { if (sortKey === k) setSortAsc(!sortAsc); else { setSortKey(k); setSortAsc(true); } setShowSort(false); }}
+                style={s.sortRow}
+              >
+                <Text style={[s.sortItem, { color: sortKey === k ? theme.accent : theme.text }]}>
+                  {k === 'name' ? 'По имени' : k === 'date' ? 'По дате' : 'По размеру'}
+                </Text>
+                {sortKey === k && <Ionicons name="checkmark" size={16} color={theme.accent} />}
+              </Pressable>
+            ))}
           </View>
         )}
       </View>
-
-      {/* Sort bar */}
-      {showSort && !isSelecting && (
-        <View style={[s.sortRow, { backgroundColor: theme.surfaceAlt, borderBottomColor: theme.border }]}>
-          {(['name', 'date', 'size'] as SortKey[]).map((k) => (
-            <Pressable
-              key={k}
-              onPress={() => { if (sortKey === k) setSortAsc(!sortAsc); else { setSortKey(k); setSortAsc(true); } }}
-              style={[s.sortChip, sortKey === k && { backgroundColor: theme.accentSoft, borderColor: theme.accent }]}
-            >
-              <Text style={[s.sortText, { color: sortKey === k ? theme.accent : theme.textSecondary }]}>
-                {k === 'name' ? 'Имя' : k === 'date' ? 'Дата' : 'Размер'}{sortKey === k ? (sortAsc ? ' ↑' : ' ↓') : ''}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
-
-      {/* Breadcrumb */}
-      {!isSelecting && tab === 'files' && pathParts.length > 0 && (
-        <View style={s.breadcrumb}>
-          <Pressable onPress={() => setCurrentPath(MD_READER_DIR)}>
-            <Text style={[s.crumbText, { color: theme.accent }]}>Мои файлы</Text>
-          </Pressable>
-          {pathParts.map((part, i) => (
-            <React.Fragment key={i}>
-              <Text style={[s.crumbText, { color: theme.textSecondary }]}> / </Text>
-              <Pressable onPress={() => {
-                const target = MD_READER_DIR + pathParts.slice(0, i + 1).join('/') + '/';
-                setCurrentPath(target);
-              }}>
-                <Text style={[s.crumbText, { color: i === pathParts.length - 1 ? theme.text : theme.accent }]}>
-                  {part}
-                </Text>
-              </Pressable>
-            </React.Fragment>
-          ))}
-        </View>
-      )}
 
       {/* Content */}
       {tab === 'files' && (
@@ -662,50 +761,109 @@ export default function FileBrowserScreen({ navigation }: Props) {
         )
       )}
 
-      {/* Bottom tabs + FAB */}
-      <View style={[s.tabs, { backgroundColor: theme.surface, borderTopColor: theme.border, paddingBottom: insets.bottom + 8 }]}>
-        <Pressable onPress={() => setTab('files')} style={s.tabBtn}>
-          <Ionicons name={tab === 'files' ? 'folder' : 'folder-outline'} size={22} color={tab === 'files' ? theme.accent : theme.textSecondary} />
-          <Text style={[s.tabLabel, { color: tab === 'files' ? theme.accent : theme.textSecondary }]}>Файлы</Text>
-        </Pressable>
-        <Pressable onPress={() => setTab('recent')} style={s.tabBtn}>
-          <Ionicons name={tab === 'recent' ? 'time' : 'time-outline'} size={22} color={tab === 'recent' ? theme.accent : theme.textSecondary} />
-          <Text style={[s.tabLabel, { color: tab === 'recent' ? theme.accent : theme.textSecondary }]}>Недавние</Text>
-        </Pressable>
-        <Pressable onPress={() => navigation.navigate('Settings')} style={s.tabBtn}>
-          <Ionicons name="settings-outline" size={22} color={theme.textSecondary} />
-          <Text style={[s.tabLabel, { color: theme.textSecondary }]}>Настройки</Text>
-        </Pressable>
-      </View>
-      {tab === 'files' && !isSelecting && (
-        <Pressable
-          onPress={(e) => {
-            const { pageX, pageY } = e.nativeEvent;
-            const { width: SW, height: SH } = Dimensions.get('window');
-            setFabAt({
-              x: (typeof pageX === 'number' ? pageX : SW) - 256,
-              y: (typeof pageY === 'number' ? pageY : SH) - 320,
-            });
-            setShowFab(true);
-          }}
-          style={[s.fab, { backgroundColor: theme.accent, bottom: insets.bottom + 76 }]}
-        >
-          <Ionicons name="add" size={28} color="#FFF" />
-        </Pressable>
+      {/* Тост с откатом: удаление больше не «необратимо» */}
+      {undo && (
+        <View pointerEvents="box-none" style={[s.undoWrap, { bottom: insets.bottom + 84 }]}>
+          <View style={[s.undoBar, { backgroundColor: theme.isDark ? '#2C2C2E' : '#1C1C1E' }]}>
+            <Text style={s.undoText} numberOfLines={1}>{undo.label}</Text>
+            <Pressable onPress={undoDelete} hitSlop={10}><Text style={s.undoBtn}>Вернуть</Text></Pressable>
+          </View>
+        </View>
       )}
-      <Popover
-        visible={showFab}
-        x={fabAt.x}
-        y={fabAt.y}
-        title="Создать"
-        theme={theme}
-        onClose={() => setShowFab(false)}
-        actions={[
-          { icon: 'document-text-outline', label: 'Новый файл', onPress: createNewFile },
-          { icon: 'folder-outline', label: 'Новая папка', onPress: () => setShowNewFolder(true) },
-          { icon: 'download-outline', label: 'Импорт из хранилища', onPress: importFile },
-        ]}
-      />
+
+      {/* Плавающая капсула вместо приклеенного таббара */}
+      <View pointerEvents="box-none" style={[s.tabWrap, { bottom: insets.bottom + 10 }]}>
+        <View style={[s.tabBar, { backgroundColor: theme.glass, borderColor: theme.glassLine }]}>
+          {([
+            ['files', 'Файлы', 'folder'],
+            ['recent', 'Недавние', 'time'],
+            ['settings', 'Настройки', 'settings'],
+          ] as const).map(([key, label, icon]) => {
+            const active = key === 'settings' ? false : tab === key;
+            return (
+              <Pressable
+                key={key}
+                onPress={() => {
+                  if (key === 'settings') { navigation.navigate('Settings'); return; }
+                  setTab(key as Tab);
+                  cancelSelecting();
+                }}
+                style={[s.tabItem, active && { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.14)' : '#FFFFFF' }]}
+              >
+                <Ionicons
+                  name={(active ? icon : `${icon}-outline`) as any}
+                  size={21}
+                  color={active ? theme.text : theme.textSecondary}
+                />
+                <Text style={[s.tabLabel, { color: active ? theme.text : theme.textSecondary }]}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* Создать: шторка снизу */}
+      <Modal visible={showCreate} transparent animationType="fade" onRequestClose={() => setShowCreate(false)}>
+        <View style={s.sheetOverlay}>
+          <Pressable style={s.sheetBackdrop} onPress={() => setShowCreate(false)} />
+          <View style={[s.sheet, { backgroundColor: theme.surface, paddingBottom: insets.bottom + 12 }]}>
+            <View style={[s.sheetHandle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.22)' : theme.textTertiary }]} />
+            <Text style={[s.sheetTitle, { color: theme.text }]}>Создать</Text>
+            {([
+              ['document-text-outline', 'Новый файл', createNewFile],
+              ['folder-outline', 'Новая папка', () => setShowNewFolder(true)],
+              ['download-outline', 'Импорт из хранилища', importFile],
+            ] as const).map(([icon, label, onPress]) => (
+              <Pressable
+                key={label}
+                onPress={() => { setShowCreate(false); setTimeout(onPress as any, 180); }}
+                style={[s.actionRow, { borderBottomColor: theme.divider }]}
+              >
+                <Ionicons name={icon as any} size={22} color={theme.text} />
+                <Text style={[s.actionText, { color: theme.text }]}>{label}</Text>
+              </Pressable>
+            ))}
+            <Pressable onPress={() => setShowCreate(false)} style={[s.cancelRow, { backgroundColor: theme.fill }]}>
+              <Text style={[s.actionText, { color: theme.text }]}>Отмена</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Ещё: служебные действия экрана */}
+      <Modal visible={showMore} transparent animationType="fade" onRequestClose={() => setShowMore(false)}>
+        <View style={s.sheetOverlay}>
+          <Pressable style={s.sheetBackdrop} onPress={() => setShowMore(false)} />
+          <View style={[s.sheet, { backgroundColor: theme.surface, paddingBottom: insets.bottom + 12 }]}>
+            <View style={[s.sheetHandle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.22)' : theme.textTertiary }]} />
+            <Text style={[s.sheetTitle, { color: theme.text }]}>{pathParts.length ? pathParts[pathParts.length - 1] : 'Мои файлы'}</Text>
+            <Pressable
+              onPress={() => { setShowMore(false); setTab('recent'); }}
+              style={[s.actionRow, { borderBottomColor: theme.divider }]}
+            >
+              <Ionicons name="time-outline" size={22} color={theme.text} />
+              <Text style={[s.actionText, { color: theme.text }]}>Недавние файлы</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => { setShowMore(false); setIsSelecting(true); }}
+              style={[s.actionRow, { borderBottomColor: theme.divider }]}
+            >
+              <Ionicons name="checkmark-circle-outline" size={22} color={theme.text} />
+              <Text style={[s.actionText, { color: theme.text }]}>Выбрать файлы</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => { setShowMore(false); navigation.navigate('Settings'); }}
+              style={[s.actionRow, { borderBottomColor: theme.divider }]}
+            >
+              <Ionicons name="options-outline" size={22} color={theme.text} />
+              <Text style={[s.actionText, { color: theme.text }]}>Настройки</Text>
+            </Pressable>
+            <Pressable onPress={() => setShowMore(false)} style={[s.cancelRow, { backgroundColor: theme.fill }]}>
+              <Text style={[s.actionText, { color: theme.text }]}>Отмена</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       {/* ⋮-попап у кнопки */}
       <Popover
@@ -808,7 +966,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
                   )}
                   <View style={s.info}>
                     <Text style={[s.name, { color: theme.text }]} numberOfLines={1}>{item.name}</Text>
-                    {!item.isDir && <TagChips tags={(tags[item.uri] || []).slice(0, 3)} theme={theme} />}
+                    {!item.isDir && <TagChips tags={(tags[item.uri] || [])} theme={theme} />}
                   </View>
                 </Pressable>
               )}
@@ -1024,6 +1182,58 @@ function formatDate(ts: number): string {
 function styles(theme: any, insets: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.bg },
+
+    // --- новый навбар: крупный заголовок, крошки строкой, поиск полем ---
+    navRow: { flexDirection: 'row', alignItems: 'center', minHeight: 42 },
+    backChevron: { marginLeft: -8, marginRight: 2, padding: 4 },
+    navTitle: { flex: 1, ...tp.largeTitle, letterSpacing: -0.6 },
+    navActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+    navBtn: { padding: 7 },
+    navBtnText: { ...tp.callout, fontFamily: uiFontOf(600) },
+    crumbRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, marginBottom: 12 },
+    crumb: { ...tp.footnote, fontFamily: uiFontOf(500), maxWidth: 150 },
+    searchField: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      height: 36, borderRadius: 10, paddingHorizontal: 8, marginBottom: 14,
+    },
+    searchHint: { ...tp.callout },
+    listHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+    sectionTitle: { ...tp.caption, fontFamily: uiFontOf(500), textTransform: 'uppercase', letterSpacing: 0.4 },
+    sortBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingVertical: 4, paddingLeft: 8 },
+    sortMenu: {
+      borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', marginBottom: 8,
+      shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 6,
+    },
+    sortItem: { ...tp.callout },
+
+    // --- плавающая капсула ---
+    undoWrap: { position: 'absolute', left: 16, right: 16 },
+    undoBar: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 },
+    undoText: { flex: 1, ...tp.footnote, fontFamily: uiFontOf(400), color: '#FFFFFF' },
+    undoBtn: { ...tp.footnote, fontFamily: uiFontOf(600), color: '#0A84FF' },
+    tabWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+    tabBar: {
+      flexDirection: 'row', alignItems: 'center', gap: 2,
+      padding: 5, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth,
+      shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8,
+    },
+    tabItem: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
+    },
+
+    // --- шторки действий ---
+    sheetOverlay: { flex: 1, justifyContent: 'flex-end' },
+    sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.32)' },
+    sheet: {
+      borderTopLeftRadius: 24, borderTopRightRadius: 24,
+      paddingHorizontal: 18, paddingTop: 10, paddingBottom: 16,
+    },
+    sheetHandle: { width: 36, height: 5, borderRadius: 3, alignSelf: 'center', marginBottom: 10 },
+    sheetTitle: { ...tp.title3, marginBottom: 8 },
+    actionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+    actionText: { ...tp.body },
+    cancelRow: { marginTop: 10, borderRadius: 12, alignItems: 'center', paddingVertical: 13 },
     header: {
       flexDirection: 'row', alignItems: 'center',
       paddingTop: insets.top + 8, paddingHorizontal: 16, paddingBottom: 8,
@@ -1034,9 +1244,9 @@ function styles(theme: any, insets: any) {
     title: { flex: 1, fontSize: 18, fontWeight: '600' },
     headerActions: { flexDirection: 'row', gap: 4 },
     iconBtn: { padding: 8 },
-    sortRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1 },
+    sortRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12 },
     sortChip: { borderWidth: 1, borderColor: 'transparent', borderRadius: 99, paddingHorizontal: 12, paddingVertical: 5 },
-    sortText: { fontSize: 13 },
+    sortText: { ...tp.footnote, fontFamily: uiFontOf(500) },
     filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: theme.surfaceAlt, borderBottomWidth: 1, borderBottomColor: theme.border },
     breadcrumb: {
       flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center',
@@ -1044,17 +1254,17 @@ function styles(theme: any, insets: any) {
       borderBottomWidth: 1, borderBottomColor: theme.border,
     },
     crumbText: { fontSize: 13 },
-    list: { padding: 16, paddingBottom: 160 },
-    item: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+    list: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 140 },
+    item: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
     checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: theme.border, alignItems: 'center', justifyContent: 'center' },
-    iconWrap: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+    iconWrap: { width: 34, height: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
     info: { flex: 1 },
-    name: { fontSize: 15, fontWeight: '500' },
-    meta: { fontSize: 12, marginTop: 2 },
+    name: { ...tp.body, fontFamily: uiFontOf(400) },
+    meta: { ...tp.caption, marginTop: 1 },
     itemBtn: { padding: 8 },
     tabs: { flexDirection: 'row', borderTopWidth: 1, paddingTop: 8, paddingHorizontal: 4, position: 'absolute', bottom: 0, left: 0, right: 0 },
     tabBtn: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: 4 },
-    tabLabel: { fontSize: 10 },
+    tabLabel: { ...tp.caption2, fontFamily: uiFontOf(500) },
     fab: { position: 'absolute', right: 20, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8 },
     empty: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
     emptyText: { fontSize: 16 },

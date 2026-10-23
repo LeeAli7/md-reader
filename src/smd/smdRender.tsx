@@ -17,6 +17,26 @@ interface Ctx {
   fontSize: number;
 }
 
+
+// Семантические цвета блоков: в КРОВИ единственный акцент — белый,
+// зелёный/красный остаются только как смысл «верно/неверно».
+export function colors(rt: any) {
+  const d = !!rt?.dark;
+  return {
+    blue: d ? '#FFFFFF' : '#007AFF',
+    blueBg: d ? 'rgba(255,255,255,0.12)' : 'rgba(0,122,255,0.13)',
+    ok: d ? '#30D158' : '#248A3D',
+    okBg: d ? 'rgba(48,209,88,0.16)' : 'rgba(36,138,61,0.12)',
+    no: d ? '#FF453A' : '#D70015',
+    noBg: d ? 'rgba(255,69,58,0.16)' : 'rgba(215,0,21,0.10)',
+    gold: d ? '#FFD60A' : '#B25000',
+    goldBg: d ? 'rgba(255,214,10,0.14)' : 'rgba(178,80,0,0.10)',
+    goldLine: d ? 'rgba(255,214,10,0.45)' : 'rgba(178,80,0,0.40)',
+    mute: d ? '#98989F' : '#8E8E93',
+    muteBg: d ? 'rgba(152,152,159,0.18)' : 'rgba(142,142,147,0.12)',
+  };
+}
+
 export function SmdDocView({ doc, mdStyle, rt, fontSize, onBlockLayout, docKey, onAskTask }: { doc: SmdDoc; mdStyle: any; rt: any; fontSize: number; onBlockLayout?: (index: number, y: number) => void; docKey?: string; onAskTask?: (t: { chatId: string; title: string; task: string; solution: string }) => void }) {
   const ctx: Ctx = { mdStyle, rt, fontSize };
   return (
@@ -100,17 +120,17 @@ function TaskAssist({ block, solution, ctx, docKey, onAskTask }: {
     }
   };
   return (
-    <View style={[s.card, { borderColor: '#F59E0B88', backgroundColor: '#F59E0B0D' }]}>
+    <View style={[s.card, { borderColor: colors(ctx.rt).goldLine, backgroundColor: colors(ctx.rt).goldBg }]}>
       <View style={s.cardHead}>
-        <Ionicons name="pencil-outline" size={16} color="#F59E0B" />
-        <Text style={[s.cardLabel, { color: '#F59E0B' }]}>
+        <Ionicons name="pencil-outline" size={16} color={colors(ctx.rt).gold} />
+        <Text style={[s.cardLabel, { color: colors(ctx.rt).gold }]}>
           Задача{block.difficulty ? ` · сложность ${block.difficulty}` : ''}{block.points ? ` · ${block.points} б.` : ''}
         </Text>
       </View>
       <RichText body={prettifySpans(block.body)} ctx={ctx} />
       <Pressable onPress={openBranch} style={s.askBtn} hitSlop={6}>
-        <Ionicons name="chatbubble-ellipses-outline" size={16} color="#3B82F6" />
-        <Text style={[s.askBtnText, { color: '#3B82F6' }]}>{onAskTask ? 'Спросить в ветке' : open ? 'Скрыть вопросы' : 'Спросить по задаче'}</Text>
+        <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors(ctx.rt).blue} />
+        <Text style={[s.askBtnText, { color: colors(ctx.rt).blue }]}>{onAskTask ? 'Спросить в ветке' : open ? 'Скрыть вопросы' : 'Спросить по задаче'}</Text>
       </Pressable>
       {open && (
         <View style={{ marginTop: 8 }}>
@@ -118,7 +138,7 @@ function TaskAssist({ block, solution, ctx, docKey, onAskTask }: {
             <View
               key={i}
               style={[s.chatMsg, m.role === 'user'
-                ? { alignSelf: 'flex-end', backgroundColor: '#3B82F622' }
+                ? { alignSelf: 'flex-end', backgroundColor: colors(ctx.rt).blueBg }
                 : { alignSelf: 'flex-start', backgroundColor: ctx.rt.text + '0D' }]}
             >
               <Text style={{ color: ctx.rt.text, fontSize: ctx.fontSize * 0.92, lineHeight: 20 }}>{m.text}</Text>
@@ -126,12 +146,12 @@ function TaskAssist({ block, solution, ctx, docKey, onAskTask }: {
           ))}
           {busy && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 6 }}>
-              <ActivityIndicator size="small" color="#3B82F6" />
+              <ActivityIndicator size="small" color={colors(ctx.rt).blue} />
               <Text style={{ color: ctx.rt.text + '60', fontSize: 13 }}>Думаю над задачей…</Text>
             </View>
           )}
           {err ? (
-            <Text style={{ color: '#EF4444', fontSize: 13, marginVertical: 4 }}>{err}</Text>
+            <Text style={{ color: colors(ctx.rt).no, fontSize: 13, marginVertical: 4 }}>{err}</Text>
           ) : null}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
             <TextInput
@@ -145,7 +165,7 @@ function TaskAssist({ block, solution, ctx, docKey, onAskTask }: {
               editable={!busy}
             />
             <Pressable onPress={send} disabled={busy || !q.trim()} hitSlop={8} style={[s.sendBtn, { opacity: busy || !q.trim() ? 0.4 : 1 }]}>
-              <Ionicons name="send" size={20} color="#3B82F6" />
+              <Ionicons name="send" size={20} color={colors(ctx.rt).blue} />
             </Pressable>
           </View>
         </View>
@@ -212,7 +232,7 @@ function BlockView({ block, ctx, blocks, index, docKey, onAskTask }: {
       return <RichText body={block.body} ctx={ctx} />;
     case 'def':
       return (
-        <View style={[s.def, { borderLeftColor: '#8B5CF6', backgroundColor: ctx.rt.text + '08' }]}>
+        <View style={[s.def, { borderLeftColor: colors(ctx.rt).mute, backgroundColor: ctx.rt.text + '08' }]}>
           <Text style={[s.defTerm, { color: ctx.rt.text, fontSize: ctx.fontSize * 1.1 }]}>
             {block.term ?? 'Определение'}
           </Text>
@@ -245,7 +265,7 @@ function BlockView({ block, ctx, blocks, index, docKey, onAskTask }: {
       return <CompareTable head={block.head} rows={block.rows} ctx={ctx} />;
     case 'theorem':
       return (
-        <View style={[s.def, { borderLeftColor: '#3B82F6', backgroundColor: ctx.rt.text + '08' }]}>
+        <View style={[s.def, { borderLeftColor: colors(ctx.rt).blue, backgroundColor: ctx.rt.text + '08' }]}>
           <Text style={[s.defTerm, { color: ctx.rt.text, fontSize: ctx.fontSize * 1.1 }]}>
             {block.name ?? 'Теорема'}
           </Text>
@@ -256,7 +276,7 @@ function BlockView({ block, ctx, blocks, index, docKey, onAskTask }: {
       return <Reveal title="Доказательство" body={block.body} icon="checkmark-circle-outline" ctx={ctx} />;
     case 'summary':
       return (
-        <View style={[s.def, { borderLeftColor: '#22C55E', backgroundColor: ctx.rt.text + '08' }]}>
+        <View style={[s.def, { borderLeftColor: colors(ctx.rt).ok, backgroundColor: ctx.rt.text + '08' }]}>
           <Text style={[s.defTerm, { color: ctx.rt.text, fontSize: ctx.fontSize * 1.1 }]}>Выжимка</Text>
           <RichText body={block.body} ctx={ctx} />
         </View>
@@ -265,7 +285,7 @@ function BlockView({ block, ctx, blocks, index, docKey, onAskTask }: {
       return (
         <View>
           {block.links.map((l, i) => (
-            <Text key={i} style={{ color: '#3B82F6', fontSize: ctx.fontSize, marginBottom: 6 }}>
+            <Text key={i} style={{ color: colors(ctx.rt).blue, fontSize: ctx.fontSize, marginBottom: 6 }}>
               {l.text}
             </Text>
           ))}
@@ -274,8 +294,8 @@ function BlockView({ block, ctx, blocks, index, docKey, onAskTask }: {
       );
     case 'unknown':
       return (
-        <View style={[s.callout, { borderColor: '#9CA3AF', backgroundColor: ctx.rt.text + '05' }]}>
-          <Text style={[s.calloutLabel, { color: '#9CA3AF' }]}>:::{block.rawType} (неизвестный тип)</Text>
+        <View style={[s.callout, { borderColor: colors(ctx.rt).mute, backgroundColor: ctx.rt.text + '05' }]}>
+          <Text style={[s.calloutLabel, { color: colors(ctx.rt).mute }]}>:::{block.rawType} (неизвестный тип)</Text>
           <Markdown style={ctx.mdStyle}>{block.body}</Markdown>
         </View>
       );
@@ -313,7 +333,7 @@ function CardBlock({ front, back, ctx }: { front: string; back: string; ctx: Ctx
         <Ionicons name="layers-outline" size={16} color={ctx.rt.text + '80'} />
         <Text style={[s.cardLabel, { color: ctx.rt.text + '80' }]}>Карточка</Text>
         {mark && (
-          <Text style={[s.cardMark, { color: mark === 'know' ? '#22C55E' : '#EF4444' }]}>
+          <Text style={[s.cardMark, { color: mark === 'know' ? colors(ctx.rt).ok : colors(ctx.rt).no }]}>
             {mark === 'know' ? '✓ Знаю' : '✗ Повторить'}
           </Text>
         )}
@@ -328,15 +348,15 @@ function CardBlock({ front, back, ctx }: { front: string; back: string; ctx: Ctx
         <View style={s.cardBtns}>
           <Pressable
             onPress={() => setMark('dont')}
-            style={[s.cardBtn, { borderColor: '#EF4444' }, mark === 'dont' && { backgroundColor: '#EF444422' }]}
+            style={[s.cardBtn, { borderColor: colors(ctx.rt).no }, mark === 'dont' && { backgroundColor: colors(ctx.rt).noBg }]}
           >
-            <Text style={[s.cardBtnText, { color: '#EF4444' }]}>Не знаю</Text>
+            <Text style={[s.cardBtnText, { color: colors(ctx.rt).no }]}>Не знаю</Text>
           </Pressable>
           <Pressable
             onPress={() => setMark('know')}
-            style={[s.cardBtn, { borderColor: '#22C55E' }, mark === 'know' && { backgroundColor: '#22C55E22' }]}
+            style={[s.cardBtn, { borderColor: colors(ctx.rt).ok }, mark === 'know' && { backgroundColor: colors(ctx.rt).okBg }]}
           >
-            <Text style={[s.cardBtnText, { color: '#22C55E' }]}>Знаю</Text>
+            <Text style={[s.cardBtnText, { color: colors(ctx.rt).ok }]}>Знаю</Text>
           </Pressable>
         </View>
       )}
@@ -361,8 +381,8 @@ function RichText({ body, ctx }: { body: string; ctx: Ctx }) {
             key={i}
             onPress={() => setOpen((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]))}
             style={open.includes(i)
-              ? { color: '#22C55E', fontWeight: '700' }
-              : { backgroundColor: '#8B5CF633', color: ctx.rt.text }}
+              ? { color: colors(ctx.rt).ok, fontWeight: '700' }
+              : { backgroundColor: colors(ctx.rt).muteBg, color: ctx.rt.text }}
           >
             {open.includes(i) ? p.text : ' [•••] '}
           </Text>
@@ -381,10 +401,10 @@ function ClozeBlock({ body, ctx }: { body: string; ctx: Ctx }) {
   const parts = splitCloze(body);
   const [open, setOpen] = useState<number[]>([]);
   return (
-    <View style={[s.callout, { borderColor: '#8B5CF6', backgroundColor: '#8B5CF614' }]}>
+    <View style={[s.callout, { borderColor: colors(ctx.rt).mute, backgroundColor: colors(ctx.rt).muteBg }]}>
       <View style={s.cardHead}>
-        <Ionicons name="eye-off-outline" size={16} color="#8B5CF6" />
-        <Text style={[s.calloutLabel, { color: '#8B5CF6' }]}>Пропуск · тап — открыть</Text>
+        <Ionicons name="eye-off-outline" size={16} color={colors(ctx.rt).mute} />
+        <Text style={[s.calloutLabel, { color: colors(ctx.rt).mute }]}>Пропуск · тап — открыть</Text>
       </View>
       <Text style={[s.clozeText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>
         {parts.map((p, i) => p.hidden ? (
@@ -392,7 +412,7 @@ function ClozeBlock({ body, ctx }: { body: string; ctx: Ctx }) {
             key={i}
             onPress={() => setOpen((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]))}
             style={open.includes(i)
-              ? { color: '#22C55E', fontWeight: '700' }
+              ? { color: colors(ctx.rt).ok, fontWeight: '700' }
               : { backgroundColor: ctx.rt.text + '25', color: 'transparent' }}
           >
             {open.includes(i) ? p.text : `  ${p.text.replace(/./g, '·')}  `}
@@ -588,9 +608,9 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
             style={[
               s.opt,
               { borderColor: ctx.rt.text + '25' },
-              sel.includes(i) && { borderColor: '#3B82F6', backgroundColor: '#3B82F622' },
-              r === true && { borderColor: '#22C55E', backgroundColor: '#22C55E22' },
-              r === false && { borderColor: '#EF4444', backgroundColor: '#EF444422' },
+              sel.includes(i) && { borderColor: colors(ctx.rt).blue, backgroundColor: colors(ctx.rt).blueBg },
+              r === true && { borderColor: colors(ctx.rt).ok, backgroundColor: colors(ctx.rt).okBg },
+              r === false && { borderColor: colors(ctx.rt).no, backgroundColor: colors(ctx.rt).noBg },
             ]}
           >
             <Ionicons
@@ -598,7 +618,7 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
                 ? (sel.includes(i) ? 'radio-button-on' : 'radio-button-off')
                 : (sel.includes(i) ? 'checkbox' : 'square-outline')}
               size={18}
-              color={r === true ? '#22C55E' : r === false ? '#EF4444' : ctx.rt.text + '80'}
+              color={r === true ? colors(ctx.rt).ok : r === false ? colors(ctx.rt).no : ctx.rt.text + '80'}
             />
             <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>{fixArrows(o.text)}</Text>
           </Pressable>
@@ -645,17 +665,17 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
                   onPress={() => tapLeft(li)}
                   style={[s.matchCell,
                     { borderColor: ctx.rt.text + '25' },
-                    selL === li && { borderColor: '#3B82F6', backgroundColor: '#3B82F622' },
+                    selL === li && { borderColor: colors(ctx.rt).blue, backgroundColor: colors(ctx.rt).blueBg },
                     linkPos !== undefined && selL !== li && { borderColor: ctx.rt.text + '60' },
-                    leftVerdict === true && { borderColor: '#22C55E', backgroundColor: '#22C55E22' },
-                    leftVerdict === false && { borderColor: '#EF4444', backgroundColor: '#EF444422' },
+                    leftVerdict === true && { borderColor: colors(ctx.rt).ok, backgroundColor: colors(ctx.rt).okBg },
+                    leftVerdict === false && { borderColor: colors(ctx.rt).no, backgroundColor: colors(ctx.rt).noBg },
                   ]}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     {badge !== null ? (
                       <View style={[s.linkBadge, leftVerdict === true
-                        ? { backgroundColor: '#22C55E' }
-                        : leftVerdict === false ? { backgroundColor: '#EF4444' } : { backgroundColor: '#3B82F6' }]}>
+                        ? { backgroundColor: colors(ctx.rt).ok }
+                        : leftVerdict === false ? { backgroundColor: colors(ctx.rt).no } : { backgroundColor: colors(ctx.rt).blue }]}>
                         <Text style={s.linkBadgeText}>{badge}</Text>
                       </View>
                     ) : null}
@@ -667,15 +687,15 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
                   style={[s.matchCell,
                     { borderColor: ctx.rt.text + '25' },
                     linkPos === pos && { borderColor: ctx.rt.text + '60' },
-                    rightVerdict === true && { borderColor: '#22C55E', backgroundColor: '#22C55E22' },
-                    rightVerdict === false && { borderColor: '#EF4444', backgroundColor: '#EF444422' },
+                    rightVerdict === true && { borderColor: colors(ctx.rt).ok, backgroundColor: colors(ctx.rt).okBg },
+                    rightVerdict === false && { borderColor: colors(ctx.rt).no, backgroundColor: colors(ctx.rt).noBg },
                   ]}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     {linkPos === pos ? (
                       <View style={[s.linkBadge, rightVerdict === true
-                        ? { backgroundColor: '#22C55E' }
-                        : rightVerdict === false ? { backgroundColor: '#EF4444' } : { backgroundColor: '#3B82F6' }]}>
+                        ? { backgroundColor: colors(ctx.rt).ok }
+                        : rightVerdict === false ? { backgroundColor: colors(ctx.rt).no } : { backgroundColor: colors(ctx.rt).blue }]}>
                         <Text style={s.linkBadgeText}>{badge}</Text>
                       </View>
                     ) : null}
@@ -700,13 +720,13 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
               key={pos}
               onPress={() => tapOrder(pos)}
               style={[s.matchRow,
-                orderSel === pos && { borderColor: '#3B82F6', backgroundColor: '#3B82F622', borderWidth: 1, borderRadius: 10, padding: 4 },
-                checked && orderOk && { borderColor: '#22C55E', borderWidth: 1, borderRadius: 10, padding: 4 },
-                checked && !orderOk && { borderColor: '#EF4444', borderWidth: 1, borderRadius: 10, padding: 4 },
+                orderSel === pos && { borderColor: colors(ctx.rt).blue, backgroundColor: colors(ctx.rt).blueBg, borderWidth: 1, borderRadius: 10, padding: 4 },
+                checked && orderOk && { borderColor: colors(ctx.rt).ok, borderWidth: 1, borderRadius: 10, padding: 4 },
+                checked && !orderOk && { borderColor: colors(ctx.rt).no, borderWidth: 1, borderRadius: 10, padding: 4 },
               ]}
             >
               <View style={s.orderPos}>
-                <Text style={[s.orderPosText, { color: orderSel === pos ? '#FFF' : ctx.rt.text + '80', backgroundColor: orderSel === pos ? '#3B82F6' : 'transparent' }]}>
+                <Text style={[s.orderPosText, { color: orderSel === pos ? '#FFF' : ctx.rt.text + '80', backgroundColor: orderSel === pos ? colors(ctx.rt).blue : 'transparent' }]}>
                   {pos + 1}
                 </Text>
               </View>
@@ -726,8 +746,8 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
             </Pressable>
           </View>
           {checked && !orderOk && (
-            <View style={[s.callout, { borderColor: '#22C55E', backgroundColor: '#22C55E14' }]}>
-              <Text style={[s.calloutLabel, { color: '#22C55E' }]}>Правильный порядок</Text>
+            <View style={[s.callout, { borderColor: colors(ctx.rt).ok, backgroundColor: colors(ctx.rt).okBg }]}>
+              <Text style={[s.calloutLabel, { color: colors(ctx.rt).ok }]}>Правильный порядок</Text>
               {orderItems.map((t, i) => (
                 <Text key={i} style={{ color: ctx.rt.text, fontSize: ctx.fontSize * 0.92, marginTop: 2 }}>
                   {i + 1}. {t}
@@ -739,12 +759,12 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
       )}
 
       {(block.quizType === 'multi' || block.quizType === 'free' || block.quizType === 'numeric' || block.quizType === 'match' || block.quizType === 'order') && !checked && (
-        <Pressable onPress={() => setChecked(true)} style={[s.checkBtn, { backgroundColor: '#3B82F6' }]}>
+        <Pressable onPress={() => setChecked(true)} style={[s.checkBtn, { backgroundColor: colors(ctx.rt).blue }]}>
           <Text style={s.checkBtnText}>Проверить</Text>
         </Pressable>
       )}
       {block.quizType === 'single' && sel.length > 0 && !checked && (
-        <Pressable onPress={() => setChecked(true)} style={[s.checkBtn, { backgroundColor: '#3B82F6' }]}>
+        <Pressable onPress={() => setChecked(true)} style={[s.checkBtn, { backgroundColor: colors(ctx.rt).blue }]}>
           <Text style={s.checkBtnText}>Проверить</Text>
         </Pressable>
       )}
@@ -752,27 +772,27 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
       {checked && (
         <View style={s.verdict}>
           {block.quizType === 'free' ? (
-            <Text style={[s.verdictText, { color: freeOk ? '#22C55E' : '#EF4444' }]}>
+            <Text style={[s.verdictText, { color: freeOk ? colors(ctx.rt).ok : colors(ctx.rt).no }]}>
               {freeOk ? '✓ Верно' : `✗ Правильно: ${block.answer ?? '—'}`}
             </Text>
           ) : block.quizType === 'numeric' ? (
-            <Text style={[s.verdictText, { color: numOk ? '#22C55E' : '#EF4444' }]}>
+            <Text style={[s.verdictText, { color: numOk ? colors(ctx.rt).ok : colors(ctx.rt).no }]}>
               {numOk ? '✓ Верно' : `✗ Правильно: ${block.answer ?? '—'}${block.unit ? ` ${block.unit}` : ''}`}
             </Text>
           ) : block.quizType === 'match' ? (
-            <Text style={[s.verdictText, { color: matchOk ? '#22C55E' : '#EF4444' }]}>
+            <Text style={[s.verdictText, { color: matchOk ? colors(ctx.rt).ok : colors(ctx.rt).no }]}>
               {matchOk ? '✓ Все пары верны' : '✗ Есть неверные пары'}
             </Text>
           ) : block.quizType === 'order' ? (
-            <Text style={[s.verdictText, { color: orderOk ? '#22C55E' : '#EF4444' }]}>
+            <Text style={[s.verdictText, { color: orderOk ? colors(ctx.rt).ok : colors(ctx.rt).no }]}>
               {orderOk ? '✓ Порядок верный' : '✗ Порядок неверный'}
             </Text>
           ) : block.quizType === 'single' ? (
-            <Text style={[s.verdictText, { color: opts[sel[0]]?.correct ? '#22C55E' : '#EF4444' }]}>
+            <Text style={[s.verdictText, { color: opts[sel[0]]?.correct ? colors(ctx.rt).ok : colors(ctx.rt).no }]}>
               {opts[sel[0]]?.correct ? '✓ Верно' : '✗ Неверно'}
             </Text>
           ) : (
-            <Text style={[s.verdictText, { color: multiOk ? '#22C55E' : '#EF4444' }]}>
+            <Text style={[s.verdictText, { color: multiOk ? colors(ctx.rt).ok : colors(ctx.rt).no }]}>
               {multiOk ? '✓ Точно' : '✗ Нужно точное совпадение'}
             </Text>
           )}
@@ -787,14 +807,14 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
 
 // --- callout: цветные плашки mistake / exam-tip / intuition ---
 
-const CALLOUT_STYLE: Record<string, { color: string; icon: any; label: string }> = {
-  'mistake': { color: '#EF4444', icon: 'alert-circle-outline', label: 'Ошибка' },
-  'exam-tip': { color: '#F59E0B', icon: 'star-outline', label: 'К экзамену' },
-  'intuition': { color: '#3B82F6', icon: 'bulb-outline', label: 'Интуиция' },
-};
+const calloutStyle = (rt: any): Record<string, { color: string; icon: any; label: string }> => ({
+  'mistake': { color: colors(rt).no, icon: 'alert-circle-outline', label: 'Ошибка' },
+  'exam-tip': { color: colors(rt).gold, icon: 'star-outline', label: 'К экзамену' },
+  'intuition': { color: colors(rt).blue, icon: 'bulb-outline', label: 'Интуиция' },
+});
 
 function CalloutBlock({ kind, body, ctx }: { kind: string; body: string; ctx: Ctx }) {
-  const st = CALLOUT_STYLE[kind] ?? { color: '#9CA3AF', icon: 'information-circle-outline', label: kind };
+  const st = calloutStyle(ctx.rt)[kind] ?? { color: colors(ctx.rt).mute, icon: 'information-circle-outline', label: kind };
   return (
     <View style={[s.callout, { borderColor: st.color, backgroundColor: st.color + '14' }]}>
       <View style={s.cardHead}>
@@ -830,7 +850,7 @@ function ChecklistBlock({ items, ctx }: { items: string[]; ctx: Ctx }) {
             <Ionicons
               name={on ? 'checkbox' : 'square-outline'}
               size={20}
-              color={on ? '#22C55E' : ctx.rt.text + '60'}
+              color={on ? colors(ctx.rt).ok : ctx.rt.text + '60'}
             />
             <Text style={[
               s.checkText,
@@ -887,7 +907,7 @@ const s = StyleSheet.create({
   formula: {
     borderWidth: 1, borderRadius: 8, padding: 12, marginVertical: 8,
   },
-  formulaText: { fontFamily: 'monospace', fontSize: 15, lineHeight: 22 },
+  formulaText: { fontFamily: 'JetBrainsMono', fontSize: 15, lineHeight: 22 },
   reveal: { borderWidth: 1, borderRadius: 10, marginVertical: 8, overflow: 'hidden' },
   revealHead: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 },
   revealTitle: { flex: 1, fontWeight: '600' },

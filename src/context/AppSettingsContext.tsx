@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { defaultSizes } from '../theme/fonts';
-import { fonts as FONT_LIST } from '../theme/fonts';
+import { defaultSizes, DEFAULT_FONT_ID, getReadingFont } from '../theme/fonts';
+import { getReadingTheme, DEFAULT_READING_THEME } from '../theme/tokens';
 
 export type ThemeMode = 'light' | 'dark' | 'auto';
 
@@ -41,9 +41,10 @@ interface Ctx extends Settings {
 }
 
 const DEFAULTS: Settings = {
-  themeMode: 'auto',
-  readingTheme: 'default',
-  font: 'Inter',
+  // Интерфейс по умолчанию — чистый iOS (светлый). КРОВЬ включается вручную.
+  themeMode: 'light',
+  readingTheme: DEFAULT_READING_THEME,
+  font: DEFAULT_FONT_ID,
   fontSize: defaultSizes.fontSize,
   lineHeight: defaultSizes.lineHeight,
   contentWidth: defaultSizes.contentWidth,
@@ -75,9 +76,9 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
         ]);
         setS({
           themeMode: tm === 'light' || tm === 'dark' ? tm : tm === 'auto' ? 'auto' : DEFAULTS.themeMode,
-          readingTheme: rt || DEFAULTS.readingTheme,
-          // Миграция со старого списка из 50: неизвестное имя → Inter
-          font: f && (FONT_LIST as readonly string[]).includes(f) ? f : DEFAULTS.font,
+          readingTheme: rt ? getReadingTheme(rt).id : DEFAULTS.readingTheme,
+          // Миграция со старого списка из 15: имя семейства или старый id → новый id.
+          font: getReadingFont(f ?? undefined).id,
           fontSize: fs ? Number(fs) || DEFAULTS.fontSize : DEFAULTS.fontSize,
           lineHeight: lh ? Number(lh) || DEFAULTS.lineHeight : DEFAULTS.lineHeight,
           contentWidth: cw ? Number(cw) || DEFAULTS.contentWidth : DEFAULTS.contentWidth,
@@ -129,9 +130,24 @@ export function useReadingStyle() {
   const fontSize = app?.fontSize ?? defaultSizes.fontSize;
   const lineHeight = app?.lineHeight ?? defaultSizes.lineHeight;
   const font = app?.font ?? DEFAULTS.font;
-  const fontFamily = font.replace(/\s+/g, '');
+  const face = getReadingFont(font);
   const contentWidth = app?.contentWidth ?? defaultSizes.contentWidth;
   const readingTheme = app?.readingTheme ?? DEFAULTS.readingTheme;
-  const remountKey = `${fontFamily}|${fontSize}|${lineHeight}|${readingTheme}`;
-  return { fontSize, lineHeight, font, fontFamily, contentWidth, readingTheme, remountKey, app };
+  const sheet = getReadingTheme(readingTheme);
+  const remountKey = `${face.id}|${fontSize}|${lineHeight}|${readingTheme}`;
+  return {
+    fontSize,
+    lineHeight,
+    font,
+    face,
+    fontFamily: face.family,
+    boldFamily: face.bold,
+    italicFamily: face.italic,
+    boldItalicFamily: face.boldItalic,
+    contentWidth,
+    readingTheme,
+    sheet,
+    remountKey,
+    app,
+  };
 }

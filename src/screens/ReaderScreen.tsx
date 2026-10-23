@@ -19,8 +19,9 @@ import { mockSmdDoc, mockRichDoc, mockPages } from '../smd/smdMock';
 import { parseSmd, smdToc } from '../smd/smdParser';
 import type { SmdDoc, SheetDoc } from '../smd/smdTypes';
 import { useTheme } from '../hooks/useTheme';
-import { readingThemes } from '../theme/tokens';
-import { fonts } from '../theme/fonts';
+import { readingThemes, getReadingTheme } from '../theme/tokens';
+import { readingFonts, getReadingFont, LINE_HEIGHTS } from '../theme/fonts';
+import { type as tp, font as uiFontOf, mono } from '../theme/type';
 import { useReadingStyle } from '../context/AppSettingsContext';
 import { CodeBlock } from '../components/CodeBlock';
 import { ReaderTOC, Heading } from '../components/ReaderTOC';
@@ -254,125 +255,6 @@ function PagesView({ uri, pages, mdStyle, rules, rt }: { uri: string; pages: str
 
 const MAX_DOCS = 6;
 
-// Плавающий пузырь документа на пружинах: появление scale-spring, drag за пальцем,
-// над крестиком — магнит (scale 1.3 + красная рамка). Тап — переключить,
-// удержание 550мс — режим закрытия, дроп на крестик — закрыть.
-function DocBubble({
-  doc, initial, color, onTap, onMove, onHold, onDrop, onDragLive, closing,
-}: {
-  doc: Doc;
-  initial: { x: number; y: number };
-  color: string;
-  onTap: (uri: string) => void;
-  onMove: (uri: string, pos: { x: number; y: number }) => void;
-  onHold: (uri: string) => void;
-  onDrop: (uri: string) => void;
-  onDragLive: (uri: string, cx: number, cy: number) => void;
-  closing: boolean;
-}) {
-  const base = useRef({ ...initial });
-  const [at, setAt] = useState({ ...initial });
-  const pan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
-  const scale = useRef(new Animated.Value(0)).current;
-  const st = useRef({ sx: 0, sy: 0, moved: false, timer: null as any, over: false });
-
-  useEffect(() => {
-    Animated.spring(scale, { toValue: 1, friction: 6, tension: 120, useNativeDriver: true }).start();
-  }, [scale]);
-
-  const clearTimer = () => {
-    if (st.current.timer) { clearTimeout(st.current.timer); st.current.timer = null; }
-  };
-
-  const setOver = (over: boolean) => {
-    if (st.current.over === over) return;
-    st.current.over = over;
-    Animated.spring(scale, { toValue: over ? 1.3 : 1, friction: 5, tension: 140, useNativeDriver: true }).start();
-  };
-
-  return (
-    <Animated.View
-      style={[
-        bubbleStyles.bub,
-        {
-          left: at.x,
-          top: at.y,
-          backgroundColor: color,
-          borderColor: closing ? '#EF4444' : 'transparent',
-          transform: [...(pan as any).getTranslateTransform(), { scale }],
-        },
-      ]}
-      onStartShouldSetResponder={() => true}
-      onResponderGrant={(e) => {
-        st.current.sx = e.nativeEvent.pageX;
-        st.current.sy = e.nativeEvent.pageY;
-        st.current.moved = false;
-        clearTimer();
-        st.current.timer = setTimeout(() => onHold(doc.uri), 550);
-      }}
-      onResponderMove={(e) => {
-        const { width: SW, height: SH } = Dimensions.get('window');
-        const dx = e.nativeEvent.pageX - st.current.sx;
-        const dy = e.nativeEvent.pageY - st.current.sy;
-        if (Math.abs(dx) + Math.abs(dy) > 14) st.current.moved = true;
-        const nx = Math.max(-base.current.x + 4, Math.min(dx, SW - 52 - base.current.x));
-        const ny = Math.max(-base.current.y + 60, Math.min(dy, SH - 120 - base.current.y));
-        pan.setValue({ x: nx, y: ny });
-        const cx = base.current.x + nx + 24;
-        const cy = base.current.y + ny + 24;
-        onDragLive(doc.uri, cx, cy);
-        if (closing) {
-          const zx = SW / 2, zy = SH - 110;
-          setOver(Math.hypot(cx - zx, cy - zy) < 70);
-        }
-      }}
-      onResponderRelease={() => {
-        clearTimer();
-        pan.stopAnimation((v: any) => {
-          base.current = { x: base.current.x + (v.x || 0), y: base.current.y + (v.y || 0) };
-          pan.setValue({ x: 0, y: 0 });
-          setAt({ ...base.current });
-          onMove(doc.uri, { ...base.current });
-        });
-        if (closing) {
-          setOver(false);
-          onDrop(doc.uri);
-        } else if (!st.current.moved) {
-          onTap(doc.uri);
-        }
-      }}
-      onResponderTerminate={clearTimer}
-    >
-      <Text style={bubbleStyles.letter} numberOfLines={1}>
-        {(doc.title.trim()[0] || '?').toUpperCase()}
-      </Text>
-    </Animated.View>
-  );
-}
-
-// Крестик с пружинным появлением, зона минимум 88pt.
-function CloseX() {
-  const s = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.spring(s, { toValue: 1, friction: 5, tension: 100, useNativeDriver: true }).start();
-  }, [s]);
-  return (
-    <Animated.View style={{ transform: [{ scale: s }] }}>
-      <Ionicons name="close-circle" size={64} color="#EF4444" />
-    </Animated.View>
-  );
-}
-
-const bubbleStyles = StyleSheet.create({
-  bub: {
-    position: 'absolute', width: 48, height: 48, borderRadius: 24,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 2,
-    shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6, elevation: 8,
-    zIndex: 50,
-  },
-  letter: { color: '#FFF', fontSize: 20, fontWeight: '700' },
-});
-
 export default function ReaderScreen({ route, navigation }: Props) {
   const initDoc: Doc = { uri: route.params?.uri ?? '', title: route.params?.title ?? '' };
   const [docs, setDocs] = useState<Doc[]>([initDoc]);
@@ -396,9 +278,6 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const [showUI, setShowUI] = useState(true);
   const [progress, setProgress] = useState(0);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
-  const [closingUri, setClosingUri] = useState<string | null>(null);
-  const dragLive = useRef<Record<string, { x: number; y: number }>>({});
-  const [bubPos, setBubPos] = useState<Record<string, { x: number; y: number }>>({});
   const touchY = useRef(0);
 
   const active = docs[activeIdx] ?? initDoc;
@@ -484,8 +363,9 @@ export default function ReaderScreen({ route, navigation }: Props) {
     })();
   }, []);
 
-  const rt = readingThemes[readingTheme] || readingThemes.default;
-  const isDarkReading = rt.text === '#C9D1D9' || rt.text === '#E7E5E4' || rt.text === '#F8F8F2' || rt.text === '#586E75';
+  // Тема листа — объект по id, тёмность берём из флага, а не из сравнения hex.
+  const rt = getReadingTheme(readingTheme);
+  const isDarkReading = rt.dark;
 
   const loadRecent = useCallback(async () => {
     try { setRecent(await getRecent()); } catch {}
@@ -536,7 +416,6 @@ export default function ReaderScreen({ route, navigation }: Props) {
   };
 
   const closeDoc = useCallback((uri: string) => {
-    setClosingUri(null);
     setDocs((prev) => {
       const i = prev.findIndex((d) => d.uri === uri);
       if (i < 0) return prev;
@@ -576,44 +455,45 @@ export default function ReaderScreen({ route, navigation }: Props) {
         lineHeight: fontSize * lineHeight,
         fontFamily,
       },
-      paragraph: { marginVertical: 7 },
-      heading1: h(1.9, '700', 18, 12),
-      heading2: h(1.6, '700', 16, 10),
-      heading3: h(1.35, '600', 14, 8),
-      heading4: h(1.15, '600', 12, 6),
-      heading5: h(1.0, '600', 10, 6),
-      heading6: { color: rt.text + 'AA', fontSize: fontSize * 0.9, fontWeight: '600', marginTop: 10, marginBottom: 6 },
-      link: { color: isDarkReading ? '#60A5FA' : '#2563EB' },
+      paragraph: { marginVertical: 8 },
+      heading1: { ...h(1.55, '700', 26, 10), fontFamily: rs.boldFamily, letterSpacing: -0.4 },
+      heading2: { ...h(1.32, '700', 22, 8), fontFamily: rs.boldFamily, letterSpacing: -0.3 },
+      heading3: { ...h(1.14, '700', 18, 6), fontFamily: rs.boldFamily },
+      heading4: { ...h(1.02, '700', 14, 4), fontFamily: rs.boldFamily },
+      heading5: { ...h(0.96, '700', 12, 4), fontFamily: rs.boldFamily },
+      heading6: { color: rt.muted, fontSize: fontSize * 0.88, fontFamily: rs.boldFamily, marginTop: 10, marginBottom: 4 },
+      // Ссылки — единственный акцент: белый на КРОВИ, системный синий на светлом.
+      link: { color: rt.dark ? '#FFFFFF' : '#0A84FF', textDecorationLine: 'underline' as const },
       code_inline: {
-        backgroundColor: isDarkReading ? rt.text + '15' : rt.text + '0A',
-        color: rt.text, fontSize: fontSize * 0.9, borderRadius: 4,
-        paddingHorizontal: 6, paddingVertical: 2,
+        backgroundColor: rt.fill,
+        color: rt.text, fontSize: fontSize * 0.88, borderRadius: 5,
+        paddingHorizontal: 6, paddingVertical: 2, fontFamily: 'JetBrainsMono',
       },
+      // Цитата: вертикальная линейка на весь тон текста, без плашки — как в книге.
       blockquote: {
-        borderLeftColor: isDarkReading ? '#60A5FA' : '#2563EB',
-        borderLeftWidth: 3,
-        paddingLeft: 14,
+        borderLeftColor: rt.rule,
+        borderLeftWidth: 2,
+        paddingLeft: 16,
         marginLeft: 0,
-        marginVertical: 10,
-        backgroundColor: isDarkReading ? rt.text + '08' : rt.text + '05',
-        paddingVertical: 10,
-        paddingRight: 12,
-        borderRadius: 0,
+        marginVertical: 14,
+        paddingVertical: 2,
+        paddingRight: 4,
       },
-      table: { borderWidth: 1, borderColor: cellBorder, borderRadius: 8, marginVertical: 8 },
+      table: { borderWidth: 1, borderColor: cellBorder, borderRadius: 10, marginVertical: 10, overflow: 'hidden' as const },
       thead: {},
       tbody: {},
-      th: { backgroundColor: rt.text + '08', padding: 8, borderBottomWidth: 1, borderRightWidth: 1, borderColor: cellBorder },
-      td: { padding: 8, borderBottomWidth: 0.5, borderRightWidth: 1, borderColor: cellBorder },
+      th: { backgroundColor: rt.fill, padding: 10, fontFamily: rs.boldFamily, borderBottomWidth: 1, borderColor: cellBorder },
+      td: { padding: 10, borderTopWidth: StyleSheet.hairlineWidth, borderColor: cellBorder },
       tr: { borderBottomWidth: 0 },
-      hr: { backgroundColor: rt.text + '20', height: 1, marginVertical: 16 },
-      list_item: { color: rt.text, fontSize, lineHeight: fontSize * lineHeight },
-      bullet_list: { marginVertical: 6 },
-      ordered_list: { marginVertical: 6 },
-      strong: { fontWeight: '700' as const, color: rt.text },
-      em: { fontStyle: 'italic' as const, color: rt.text },
+      hr: { backgroundColor: rt.fill, height: 1, marginVertical: 20 },
+      list_item: { color: rt.text, fontSize, lineHeight: fontSize * lineHeight, marginVertical: 2 },
+      bullet_list: { marginVertical: 8 },
+      ordered_list: { marginVertical: 8 },
+      // strong/em — реальные начертания, а не синтетический вес.
+      strong: { fontFamily: rs.boldFamily, color: rt.text },
+      em: { fontFamily: rs.italicFamily, color: rt.text },
     };
-  }, [rt, fontSize, lineHeight, fontFamily, isDarkReading]);
+  }, [rt, fontSize, lineHeight, fontFamily, rs.boldFamily, rs.italicFamily, isDarkReading]);
 
   const makeOnScroll = (uri: string, isMain: boolean) => (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
@@ -917,26 +797,54 @@ export default function ReaderScreen({ route, navigation }: Props) {
     </View>
   );
 
-  const bubbleDocs = docs.filter((d) => d.uri !== active.uri);
-  const closeZone = { x: SW / 2 - 44, y: SH - 158, w: 88, h: 88 };
+  // Превью открытых документов для свитчера: первые строки текста.
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!showRecent) return;
+    let alive = true;
+    (async () => {
+      const out: Record<string, string> = {};
+      for (const d of docs) {
+        try {
+          const raw = await FileSystem.readAsStringAsync(d.uri);
+          const clean = raw
+            .replace(/^---[\s\S]*?---/, '')
+            .replace(/```[\s\S]*?```/g, ' ')
+            .replace(/[#>*_`~\-]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          out[d.uri] = clean.slice(0, 220);
+        } catch {
+          out[d.uri] = '';
+        }
+      }
+      if (alive) setPreviews(out);
+    })();
+    return () => { alive = false; };
+  }, [showRecent, docs]);
 
   return (
     <View style={[s.container, { backgroundColor: rt.bg }]}>
       {showUI && (
         <>
-          <View style={[s.topBar, { backgroundColor: rt.bg, borderBottomColor: rt.text + '15' }]}>
-            <Pressable onPress={() => navigation.goBack()} style={s.backBtn}>
-              <Ionicons name="chevron-back" size={24} color={rt.text} />
+          <View style={[s.topBar, { backgroundColor: rt.bg }]}>
+            <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={s.backBtn}>
+              <Ionicons name="chevron-back" size={26} color={rt.text} />
             </Pressable>
-            <Text style={[s.title, { color: rt.text }]} numberOfLines={1}>{active.title}</Text>
-            <Text style={[s.meta, { color: rt.text + '60' }]}>
-              {main.stats.words} сл. · ~{main.stats.readTime} мин
-            </Text>
-            <Pressable onPress={openMenuAt} style={s.iconBtn}>
-              <Ionicons name="ellipsis-vertical" size={22} color={rt.text} />
+            <View style={s.titleCol}>
+              <Text style={[s.title, { color: rt.text }]} numberOfLines={1}>{active.title}</Text>
+              <Text style={[s.meta, { color: rt.muted }]} numberOfLines={1}>
+                {main.stats.words} сл. · ~{main.stats.readTime} мин
+              </Text>
+            </View>
+            <Pressable onPress={() => setShowSettings(true)} hitSlop={12} style={s.iconBtn}>
+              <Text style={[s.aa, { color: rt.text }]}>Aa</Text>
+            </Pressable>
+            <Pressable onPress={openMenuAt} hitSlop={12} style={s.iconBtn}>
+              <Ionicons name="ellipsis-horizontal" size={22} color={rt.text} />
             </Pressable>
           </View>
-          <ReadingProgressBar progress={progress} color={theme.accent} />
+          <ReadingProgressBar progress={progress} color={isDarkReading ? '#FFFFFF' : theme.accent} />
         </>
       )}
 
@@ -963,41 +871,33 @@ export default function ReaderScreen({ route, navigation }: Props) {
         )}
       </View>
 
-      {/* Плавающие доки */}
-      {bubbleDocs.map((d, i) => (
-        <DocBubble
-          key={d.uri}
-          doc={d}
-          initial={bubPos[d.uri] ?? { x: SW - 60, y: 150 + i * 62 }}
-          color={theme.accent}
-          closing={closingUri === d.uri}
-          onTap={(uri) => {
-            const idx = docs.findIndex((x) => x.uri === uri);
-            if (idx >= 0) {
-              Haptics.selectionAsync().catch(() => {});
-              activateIdx(idx);
-            }
-          }}
-          onMove={(uri, pos) => setBubPos((p) => ({ ...p, [uri]: pos }))}
-          onDragLive={(uri, cx, cy) => { dragLive.current[uri] = { x: cx, y: cy }; }}
-          onHold={(uri) => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-            setClosingUri(uri);
-          }}
-          onDrop={(uri) => {
-            const p = dragLive.current[uri] ?? { x: -999, y: -999 };
-            if (p.x >= closeZone.x && p.x <= closeZone.x + closeZone.w && p.y >= closeZone.y && p.y <= closeZone.y + closeZone.h) {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-              closeDoc(uri);
-            } else {
-              setClosingUri(null);
-            }
-          }}
-        />
-      ))}
-      {closingUri && (
-        <View style={[s.closeZone, { left: closeZone.x, top: closeZone.y, width: closeZone.w, height: closeZone.h }]}>
-          <CloseX />
+      {/* Док: содержание · чтение · документы. Вместо плавающих пузырей,
+          которые закрывали текст и требовали перетаскивания. */}
+      {showUI && (
+        <View style={[s.dockWrap, { bottom: insets.bottom + 14 }]} pointerEvents="box-none">
+          <View style={[s.dock, { backgroundColor: theme.isDark ? 'rgba(28,28,30,0.92)' : 'rgba(255,255,255,0.94)', borderColor: rt.dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
+            <Pressable
+              disabled={tocHeadings.length === 0}
+              onPress={() => setShowTOC(true)}
+              style={s.dockBtn}
+            >
+              <Ionicons name="list" size={21} color={tocHeadings.length ? rt.text : rt.muted} />
+            </Pressable>
+            <Pressable onPress={() => setShowSettings(true)} style={s.dockBtn}>
+              <Text style={[s.dockAa, { color: rt.text }]}>Aa</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => { setSplitPick(false); setShowRecent(true); }}
+              style={s.dockBtn}
+            >
+              <Ionicons name="albums-outline" size={20} color={rt.text} />
+              {docs.length > 1 && (
+                <View style={[s.dockBadge, { backgroundColor: theme.isDark ? '#FFFFFF' : '#007AFF' }]}>
+                  <Text style={[s.dockBadgeText, { color: theme.isDark ? '#000' : '#FFF' }]}>{docs.length}</Text>
+                </View>
+              )}
+            </Pressable>
+          </View>
         </View>
       )}
 
@@ -1021,190 +921,221 @@ export default function ReaderScreen({ route, navigation }: Props) {
         actions={menuActions}
       />
 
-      {/* Быстрое переключение + второй документ */}
+      {/* Документы: свитчер в стиле Safari — живые превью открытых документов,
+          закрытие крестиком, ниже — недавние и файлы. */}
       <Modal visible={showRecent} transparent animationType="slide" onRequestClose={closeSwitcher}>
         <View style={s.sheetOverlay}>
           <Pressable style={s.sheetBackdrop} onPress={closeSwitcher} />
           <View style={[s.sheet, { backgroundColor: theme.surface }]}>
-            <View style={s.sheetHandle} />
-            <Text style={[s.sheetTitle, { color: theme.text }]}>
-              {splitPick ? 'В какой файл разделить?' : 'Документы'}
-            </Text>
-            <View style={s.switchTabs}>
+            <View style={[s.sheetHandle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.22)' : '#C7C7CC' }]} />
+            <View style={s.sheetHead}>
+              <Text style={[s.sheetTitle, { color: theme.text }]}>{splitPick ? 'В какой файл разделить?' : 'Документы'}</Text>
+              <Pressable onPress={closeSwitcher} hitSlop={10}>
+                <Text style={[s.sheetLink, { color: theme.textSecondary }]}>Закрыть</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.docRow}>
+              {docs.map((d, i) => (
+                <Pressable
+                  key={d.uri}
+                  onPress={() => { activateIdx(i); setShowRecent(false); }}
+                  style={[s.docCard, {
+                    backgroundColor: rt.dark ? '#1C1C1E' : '#F7F7F8',
+                    borderColor: i === activeIdx ? (theme.isDark ? '#FFFFFF' : theme.accent) : 'transparent',
+                  }]}
+                >
+                  <Text
+                    style={[s.docPreview, { color: rt.dark ? 'rgba(255,255,255,0.72)' : 'rgba(0,0,0,0.58)', fontFamily: rs.fontFamily }]}
+                    numberOfLines={7}
+                  >
+                    {previews[d.uri] || d.title}
+                  </Text>
+                  <View style={[s.docFoot, { borderTopColor: rt.dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)' }]}>
+                    <Text style={[s.docName, { color: theme.text }]} numberOfLines={1}>{d.title}</Text>
+                    <Pressable hitSlop={12} onPress={() => closeDoc(d.uri)}>
+                      <Ionicons name="close-circle" size={18} color={theme.textTertiary} />
+                    </Pressable>
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <View style={[s.seg, { backgroundColor: theme.fill }]}>
               {([['recent', 'Недавние'], ['files', 'Файлы']] as const).map(([k, label]) => (
                 <Pressable
                   key={k}
                   onPress={() => openSwitcherTab(k)}
-                  style={[s.switchTab, switchTab === k && { backgroundColor: theme.accentSoft }]}
+                  style={[s.segItem, switchTab === k && { backgroundColor: theme.isDark ? '#2C2C2E' : '#FFFFFF' }]}
                 >
-                  <Text style={[s.switchTabText, { color: switchTab === k ? theme.accent : theme.textSecondary }]}>
-                    {label}
-                  </Text>
+                  <Text style={[s.segText, { color: switchTab === k ? theme.text : theme.textSecondary }]}>{label}</Text>
                 </Pressable>
               ))}
             </View>
+
             {switchTab === 'recent' ? (
-            <FlatList
-              data={recent}
-              keyExtractor={(item) => item.uri}
-              renderItem={({ item }) => {
-                const isOpen = docs.some((d) => d.uri === item.uri);
-                return (
-                  <View style={[s.recentRow, { borderBottomColor: theme.divider }]}>
-                    <Pressable onPress={() => pickFromSwitcher(item.uri, item.title)} style={{ flex: 1 }}>
-                      <Text style={[s.recentName, { color: theme.text }]} numberOfLines={1}>
-                        {isOpen ? '● ' : ''}{item.title}
-                      </Text>
-                      <Text style={[s.recentMeta, { color: theme.textSecondary }]}>
-                        {new Date(item.ts).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      </Text>
-                    </Pressable>
-                    {splitIdx === null && !splitPick && item.uri !== active.uri && (
-                      <Pressable
-                        onPress={() => openSplitDoc(item.uri, item.title)}
-                        hitSlop={8}
-                        style={s.iconBtn}
-                      >
-                        <Ionicons name="copy-outline" size={20} color={theme.accent} />
-                      </Pressable>
-                    )}
-                  </View>
-                );
-              }}
-            />
-            ) : (
-            <View style={{ flex: 1 }}>
-              {treeFolder && (
-                <Pressable onPress={() => pickTreeFolder(null)} style={s.backRow}>
-                  <Ionicons name="chevron-back" size={18} color={theme.accent} />
-                  <Text style={[s.backRowText, { color: theme.accent }]}>Все папки</Text>
-                </Pressable>
-              )}
-              {!treeFolder ? (
               <FlatList
-                data={flatFolders}
-                keyExtractor={(item) => item.node.uri}
-                renderItem={({ item }) => (
-                  <Pressable
-                    onPress={() => pickTreeFolder(item.node.uri)}
-                    style={[s.tagRow, { borderBottomColor: theme.divider, paddingLeft: 4 + item.depth * 16 }]}
-                  >
-                    <Ionicons name="folder-outline" size={18} color={theme.textSecondary} />
-                    <Text style={[s.tagName, { color: theme.text }]} numberOfLines={1}>{item.node.name}</Text>
-                    <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
-                  </Pressable>
-                )}
-              />
-              ) : (
-              <FlatList
-                data={treeFiles}
+                data={recent}
                 keyExtractor={(item) => item.uri}
                 renderItem={({ item }) => {
                   const isOpen = docs.some((d) => d.uri === item.uri);
                   return (
-                    <View style={[s.recentRow, { borderBottomColor: theme.divider }]}>
+                    <View style={[s.row, { borderBottomColor: theme.divider }]}>
                       <Pressable onPress={() => pickFromSwitcher(item.uri, item.title)} style={{ flex: 1 }}>
-                        <Text style={[s.recentName, { color: theme.text }]} numberOfLines={1}>
-                          {isOpen ? '● ' : ''}{item.title}
+                        <Text style={[s.rowTitle, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
+                        <Text style={[s.rowMeta, { color: theme.textSecondary }]}>
+                          {isOpen ? 'Открыт · ' : ''}
+                          {new Date(item.ts).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </Text>
                       </Pressable>
                       {splitIdx === null && !splitPick && item.uri !== active.uri && (
-                        <Pressable
-                          onPress={() => openSplitDoc(item.uri, item.title)}
-                          hitSlop={8}
-                          style={s.iconBtn}
-                        >
-                          <Ionicons name="copy-outline" size={20} color={theme.accent} />
+                        <Pressable onPress={() => openSplitDoc(item.uri, item.title)} hitSlop={10} style={s.iconBtn}>
+                          <Ionicons name="copy-outline" size={19} color={theme.accent} />
                         </Pressable>
                       )}
                     </View>
                   );
                 }}
               />
-              )}
-            </View>
+            ) : (
+              <View style={{ flex: 1 }}>
+                {treeFolder && (
+                  <Pressable onPress={() => pickTreeFolder(null)} style={s.backRow}>
+                    <Ionicons name="chevron-back" size={17} color={theme.accent} />
+                    <Text style={[s.backRowText, { color: theme.accent }]}>Все папки</Text>
+                  </Pressable>
+                )}
+                {!treeFolder ? (
+                  <FlatList
+                    data={flatFolders}
+                    keyExtractor={(item) => item.node.uri}
+                    renderItem={({ item }) => (
+                      <Pressable
+                        onPress={() => pickTreeFolder(item.node.uri)}
+                        style={[s.row, { borderBottomColor: theme.divider, paddingLeft: item.depth * 16 }]}
+                      >
+                        <Ionicons name="folder" size={18} color={theme.textSecondary} />
+                        <Text style={[s.rowTitle, { color: theme.text, flex: 1 }]} numberOfLines={1}>{item.node.name}</Text>
+                        <Ionicons name="chevron-forward" size={15} color={theme.textTertiary} />
+                      </Pressable>
+                    )}
+                  />
+                ) : (
+                  <FlatList
+                    data={treeFiles}
+                    keyExtractor={(item) => item.uri}
+                    renderItem={({ item }) => {
+                      const isOpen = docs.some((d) => d.uri === item.uri);
+                      return (
+                        <View style={[s.row, { borderBottomColor: theme.divider }]}>
+                          <Pressable onPress={() => pickFromSwitcher(item.uri, item.title)} style={{ flex: 1 }}>
+                            <Text style={[s.rowTitle, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
+                            {isOpen && <Text style={[s.rowMeta, { color: theme.textSecondary }]}>Открыт</Text>}
+                          </Pressable>
+                          {splitIdx === null && !splitPick && item.uri !== active.uri && (
+                            <Pressable onPress={() => openSplitDoc(item.uri, item.title)} hitSlop={10} style={s.iconBtn}>
+                              <Ionicons name="copy-outline" size={19} color={theme.accent} />
+                            </Pressable>
+                          )}
+                        </View>
+                      );
+                    }}
+                  />
+                )}
+              </View>
             )}
           </View>
         </View>
       </Modal>
 
-      <Modal visible={showSettings} transparent animationType="slide">
+      <Modal visible={showSettings} transparent animationType="slide" onRequestClose={() => setShowSettings(false)}>
         <View style={s.sheetOverlay}>
           <Pressable style={s.sheetBackdrop} onPress={() => setShowSettings(false)} />
-          <View style={[s.sheet, { backgroundColor: theme.surface }]}>
-            <View style={s.sheetHandle} />
-            <Text style={[s.sheetTitle, { color: theme.text }]}>Настройки чтения</Text>
-
-            <Text style={[s.label, { color: theme.textSecondary }]}>Размер шрифта: {fontSize}px</Text>
-            <View style={s.sliderRow}>
-              <Pressable onPress={() => app?.setFontSize(Math.max(12, fontSize - 1))}>
-                <Ionicons name="remove-circle-outline" size={28} color={theme.accent} />
-              </Pressable>
-              <View style={[s.sliderTrack, { backgroundColor: theme.border }]}>
-                <View style={[s.sliderFill, { width: `${((fontSize - 12) / 16) * 100}%`, backgroundColor: theme.accent }]} />
-              </View>
-              <Pressable onPress={() => app?.setFontSize(Math.min(28, fontSize + 1))}>
-                <Ionicons name="add-circle-outline" size={28} color={theme.accent} />
+          <View style={[s.sheet, { backgroundColor: theme.surface, paddingBottom: insets.bottom + 12 }]}>
+            <View style={[s.sheetHandle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.22)' : '#C7C7CC' }]} />
+            <View style={s.sheetHead}>
+              <Text style={[s.sheetTitle, { color: theme.text }]}>Чтение</Text>
+              <Pressable onPress={() => setShowSettings(false)} hitSlop={10}>
+                <Text style={[s.sheetLink, { color: theme.textSecondary }]}>Готово</Text>
               </Pressable>
             </View>
 
-            <Text style={[s.label, { color: theme.textSecondary }]}>Межстрочный: {lineHeight.toFixed(1)}</Text>
-            <View style={s.sliderRow}>
-              <Pressable onPress={() => app?.setLineHeight(Math.max(1.2, +(lineHeight - 0.1).toFixed(1)))}>
-                <Ionicons name="remove-circle-outline" size={28} color={theme.accent} />
-              </Pressable>
-              <View style={[s.sliderTrack, { backgroundColor: theme.border }]}>
-                <View style={[s.sliderFill, { width: `${((lineHeight - 1.2) / 1.3) * 100}%`, backgroundColor: theme.accent }]} />
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+              {/* Размер: одна строка, без ползунка — крупные кнопки по краям */}
+              <View style={s.ctlRow}>
+                <Pressable
+                  onPress={() => app?.setFontSize(Math.max(13, fontSize - 1))}
+                  style={[s.stepBtn, { backgroundColor: theme.fill }]}
+                >
+                  <Text style={[s.stepText, { color: theme.text, fontSize: 15 }]}>A</Text>
+                </Pressable>
+                <View style={[s.stepTrack, { backgroundColor: theme.fill }]}>
+                  <View style={[s.stepFill, { width: `${((fontSize - 13) / 13) * 100}%`, backgroundColor: theme.text }]} />
+                </View>
+                <Pressable
+                  onPress={() => app?.setFontSize(Math.min(26, fontSize + 1))}
+                  style={[s.stepBtn, { backgroundColor: theme.fill }]}
+                >
+                  <Text style={[s.stepText, { color: theme.text, fontSize: 21 }]}>A</Text>
+                </Pressable>
               </View>
-              <Pressable onPress={() => app?.setLineHeight(Math.min(2.5, +(lineHeight + 0.1).toFixed(1)))}>
-                <Ionicons name="add-circle-outline" size={28} color={theme.accent} />
-              </Pressable>
-            </View>
 
-            <Text style={[s.label, { color: theme.textSecondary, marginTop: 16 }]}>Тема чтения</Text>
-            <FlatList
-              data={Object.entries(readingThemes)}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={([k]) => k}
-              contentContainerStyle={{ gap: 8, paddingVertical: 8 }}
-              renderItem={({ item: [key, rt2] }) => (
-                <Pressable
-                  onPress={() => app?.setReadingTheme(key)}
-                  style={[
-                    s.themeChip,
-                    { backgroundColor: rt2.bg, borderColor: readingTheme === key ? theme.accent : rt2.text + '20' },
-                  ]}
-                >
-                  <Text style={{ color: rt2.text, fontSize: 12, fontWeight: '500' }}>{rt2.name}</Text>
-                </Pressable>
-              )}
-            />
+              {/* Межстрочный интервал — три положения */}
+              <View style={[s.seg, { backgroundColor: theme.fill, marginTop: 14 }]}>
+                {LINE_HEIGHTS.map((lh) => {
+                  const on = Math.abs(lineHeight - lh.value) < 0.05;
+                  return (
+                    <Pressable
+                      key={lh.id}
+                      onPress={() => app?.setLineHeight(lh.value)}
+                      style={[s.segItem, on && { backgroundColor: theme.isDark ? '#2C2C2E' : '#FFFFFF' }]}
+                    >
+                      <Text style={[s.segText, { color: on ? theme.text : theme.textSecondary }]}>{lh.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
 
-            <Text style={[s.label, { color: theme.textSecondary, marginTop: 16 }]}>Шрифт</Text>
-            <FlatList
-              data={[...fonts]}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(f) => f}
-              contentContainerStyle={{ gap: 8, paddingVertical: 8 }}
-              renderItem={({ item: f }) => (
-                <Pressable
-                  onPress={() => app?.setFont(f)}
-                  style={[
-                    s.fontChip,
-                    { borderColor: rs.font === f ? theme.accent : theme.border },
-                    { backgroundColor: rs.font === f ? theme.accentSoft : 'transparent' },
-                  ]}
-                >
-                  <Text style={{ color: theme.text, fontSize: 12 }}>{f}</Text>
-                </Pressable>
-              )}
-            />
+              <Text style={[s.ctlLabel, { color: theme.textSecondary }]}>Шрифт</Text>
+              {readingFonts.map((f) => {
+                const on = rs.font === f.id;
+                return (
+                  <Pressable
+                    key={f.id}
+                    onPress={() => app?.setFont(f.id)}
+                    style={[s.fontRow, { borderBottomColor: theme.divider }]}
+                  >
+                    <Text style={[s.fontName, { color: theme.text, fontFamily: f.family }]} numberOfLines={1}>
+                      {f.name}
+                    </Text>
+                    <Text style={[s.fontSample, { color: theme.textSecondary, fontFamily: f.family }]}>Аа Бб 123</Text>
+                    {on && <Ionicons name="checkmark" size={19} color={rt.dark ? '#FFFFFF' : theme.accent} />}
+                  </Pressable>
+                );
+              })}
 
-            <Pressable onPress={() => setShowSettings(false)} style={[s.closeBtn, { backgroundColor: theme.accent }]}>
-              <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '600' }}>Готово</Text>
-            </Pressable>
+              <Text style={[s.ctlLabel, { color: theme.textSecondary }]}>Лист</Text>
+              <View style={s.themeRow}>
+                {readingThemes.map((t) => {
+                  const on = readingTheme === t.id;
+                  return (
+                    <Pressable key={t.id} onPress={() => app?.setReadingTheme(t.id)} style={s.themeCell}>
+                      <View
+                        style={[
+                          s.themeCard,
+                          { backgroundColor: t.bg, borderColor: on ? (t.dark ? '#FFFFFF' : '#007AFF') : t.dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.10)' },
+                        ]}
+                      >
+                        <Text style={{ color: t.text, fontSize: 19, fontFamily: rs.boldFamily }}>Aa</Text>
+                        <View style={[s.themeLines, { backgroundColor: t.text, opacity: 0.22 }]} />
+                        <View style={[s.themeLines, { backgroundColor: t.text, opacity: 0.22, width: '58%' }]} />
+                      </View>
+                      <Text style={[s.themeName, { color: on ? theme.text : theme.textSecondary }]} numberOfLines={1}>{t.name}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1215,68 +1146,97 @@ export default function ReaderScreen({ route, navigation }: Props) {
 function styles(insets: any) {
   return StyleSheet.create({
     container: { flex: 1 },
+    // Шапка без нижней границы: воздух вместо линии, как в iOS Books.
     topBar: {
-      flexDirection: 'row', alignItems: 'center',
-      paddingTop: insets.top + 4, paddingHorizontal: 12, paddingBottom: 8,
-      borderBottomWidth: 1,
+      flexDirection: 'row', alignItems: 'center', gap: 2,
+      paddingTop: insets.top + 6, paddingHorizontal: 6, paddingBottom: 6,
     },
-    backBtn: { padding: 8 },
-    title: { flex: 1, fontSize: 16, fontWeight: '600', marginHorizontal: 4 },
-    meta: { fontSize: 12 },
+    backBtn: { padding: 6 },
+    titleCol: { flex: 1, paddingHorizontal: 2 },
+    title: { ...tp.headline },
+    meta: { ...tp.caption, marginTop: 1 },
+    aa: { ...tp.subheadStrong, letterSpacing: 0.2 },
     iconBtn: { padding: 8 },
     scroll: { flex: 1 },
-    content: { padding: 20, paddingBottom: 100 },
+    content: { paddingHorizontal: 22, paddingTop: 8, paddingBottom: 120 },
     pane: { flex: 1 },
     splitBar: {
-      flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8,
-      paddingTop: insets.top > 0 ? 4 : 8, paddingBottom: 4, borderBottomWidth: 1,
+      flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10,
+      paddingTop: insets.top > 0 ? 4 : 8, paddingBottom: 4, borderBottomWidth: StyleSheet.hairlineWidth,
     },
-    splitTitle: { flex: 1, fontSize: 13, fontWeight: '600', marginHorizontal: 4 },
+    splitTitle: { flex: 1, ...tp.footnote, fontFamily: uiFontOf(600), marginHorizontal: 4 },
     imageWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     image: { width: '100%', height: '100%' },
     openVia: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-      marginHorizontal: 20, marginBottom: 24, paddingVertical: 14, borderRadius: 12,
+      marginHorizontal: 20, marginBottom: 24, paddingVertical: 14, borderRadius: 14,
     },
-    openViaText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
-    closeZone: {
-      position: 'absolute', alignItems: 'center', justifyContent: 'center',
-      backgroundColor: 'rgba(239,68,68,0.12)', borderRadius: 40, zIndex: 40,
+    openViaText: { ...tp.subheadStrong, color: '#FFF' },
+
+    // --- док ---
+    dockWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+    dock: {
+      flexDirection: 'row', alignItems: 'center', gap: 4,
+      paddingHorizontal: 8, paddingVertical: 6, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth,
+      shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8,
     },
+    dockBtn: { width: 52, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 999 },
+    dockAa: { ...tp.subheadStrong, letterSpacing: 0.3 },
+    dockBadge: {
+      position: 'absolute', top: 4, right: 8, minWidth: 15, height: 15, borderRadius: 8,
+      alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+    },
+    dockBadgeText: { fontSize: 9, fontFamily: uiFontOf(600) },
+
+    // --- шторки ---
     sheetOverlay: { flex: 1, justifyContent: 'flex-end' },
-    sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+    sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)' },
     sheet: {
-      borderTopLeftRadius: 20, borderTopRightRadius: 20,
-      padding: 24, paddingBottom: 40, maxHeight: '85%',
+      borderTopLeftRadius: 24, borderTopRightRadius: 24,
+      paddingHorizontal: 20, paddingTop: 10, paddingBottom: 16, maxHeight: '86%',
     },
-    sheetHandle: {
-      width: 36, height: 4, borderRadius: 2, backgroundColor: '#CCC',
-      alignSelf: 'center', marginBottom: 16,
+    sheetHandle: { width: 36, height: 5, borderRadius: 3, alignSelf: 'center', marginBottom: 10 },
+    sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+    sheetTitle: { ...tp.title3 },
+    sheetLink: { ...tp.callout },
+    seg: { flexDirection: 'row', borderRadius: 10, padding: 2, gap: 2 },
+    segItem: { flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: 'center' },
+    segText: { ...tp.footnote, fontFamily: uiFontOf(500) },
+    docRow: { gap: 12, paddingVertical: 14, paddingHorizontal: 2 },
+    docCard: {
+      width: 148, height: 196, borderRadius: 16, borderWidth: 1.5, padding: 12, justifyContent: 'space-between',
     },
-    sheetTitle: { fontSize: 18, fontWeight: '600', marginBottom: 8 },
-    switchTabs: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-    switchTab: { borderRadius: 99, paddingHorizontal: 16, paddingVertical: 8 },
-    switchTabText: { fontSize: 14, fontWeight: '600' },
-    tagRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth },
-    tagName: { flex: 1, fontSize: 15, fontWeight: '500' },
-    backRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8 },
-    backRowText: { fontSize: 15, fontWeight: '600' },
-    recentRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
-    recentName: { fontSize: 15, fontWeight: '500' },
-    recentMeta: { fontSize: 12, marginTop: 2 },
-    label: { fontSize: 13, fontWeight: '500', marginBottom: 8 },
-    sliderRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
-    sliderTrack: { flex: 1, height: 4, borderRadius: 2, overflow: 'hidden' },
-    sliderFill: { height: '100%', borderRadius: 2 },
-    themeChip: {
-      paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
-      borderWidth: 1.5,
+    docPreview: { fontSize: 11, lineHeight: 17, flex: 1 },
+    docFoot: { flexDirection: 'row', alignItems: 'center', gap: 6, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8 },
+    docName: { flex: 1, ...tp.caption, fontFamily: uiFontOf(600) },
+    row: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      paddingVertical: 12, paddingHorizontal: 2, borderBottomWidth: StyleSheet.hairlineWidth,
     },
-    fontChip: {
-      paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1,
+    rowTitle: { ...tp.callout },
+    rowMeta: { ...tp.caption, marginTop: 2 },
+    backRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 10 },
+    backRowText: { ...tp.subhead, fontFamily: uiFontOf(600) },
+
+    // --- настройки чтения ---
+    ctlRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
+    ctlLabel: { ...tp.footnote, marginTop: 18, marginBottom: 8 },
+    stepBtn: { width: 46, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+    stepText: { fontFamily: uiFontOf(600), lineHeight: 24 },
+    stepTrack: { flex: 1, height: 4, borderRadius: 2, overflow: 'hidden' },
+    stepFill: { height: '100%', borderRadius: 2 },
+    fontRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
     },
-    closeBtn: {
-      marginTop: 20, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
+    fontName: { ...tp.callout, flex: 1 },
+    fontSample: { ...tp.footnote },
+    themeRow: { flexDirection: 'row', gap: 10 },
+    themeCell: { flex: 1, gap: 6 },
+    themeCard: {
+      height: 74, borderRadius: 12, borderWidth: 1.5, padding: 9, gap: 5, justifyContent: 'flex-start',
     },
+    themeLines: { height: 2, borderRadius: 1, width: '86%' },
+    themeName: { ...tp.caption, textAlign: 'center' },
   });
 }
