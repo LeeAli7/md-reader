@@ -9,6 +9,8 @@ import { getFavorites, toggleFavorite, getRecent, pushRecent as storePushRecent,
 import { getFolderTree as engineGetFolderTree } from '../utils/folderTree';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Sheet } from '../components/Sheet';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../hooks/useTheme';
 import { type as tp, font as uiFontOf } from '../theme/type';
@@ -119,6 +121,9 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const [currentPath, setCurrentPath] = useState(MD_READER_DIR);
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [showNewFile, setShowNewFile] = useState(false);
+  const [newFileName, setNewFileName] = useState('');
+  const [newFileExt, setNewFileExt] = useState<'md' | 'smd'>('md');
   const [showRename, setShowRename] = useState<FileEntry | null>(null);
   const [renameName, setRenameName] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -127,6 +132,8 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortAsc, setSortAsc] = useState(true);
   const [showSort, setShowSort] = useState(false);
+  const [headH, setHeadH] = useState(120);
+  const [importing, setImporting] = useState<{ done: number; total: number } | null>(null);
   const [favs, setFavs] = useState<string[]>([]);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
   const [tags, setTags] = useState<Record<string, string[]>>({});
@@ -357,17 +364,32 @@ export default function FileBrowserScreen({ navigation }: Props) {
     loadDir(currentPath);
   };
 
+  // Импорт: можно выбрать несколько файлов сразу, имена не перезаписываются.
   const importFile = async () => {
     try {
-      const res = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
-      if (!res.canceled && res.assets[0]) {
-        const file = res.assets[0];
-        // Не перезаписываем одноимённый файл — даём суффикс.
-        const dest = await uniquePath(currentPath, file.name);
-        await FileSystem.copyAsync({ from: file.uri, to: dest });
-        loadDir(currentPath);
+      const res = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: true,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const total = res.assets.length;
+      let done = 0;
+      setImporting({ done, total });
+      for (const file of res.assets) {
+        try {
+          const dest = await uniquePath(currentPath, file.name);
+          await FileSystem.copyAsync({ from: file.uri, to: dest });
+          done += 1;
+          setImporting({ done, total });
+        } catch (e) {
+          console.warn('import item error:', e);
+        }
       }
+      setImporting(null);
+      loadDir(currentPath);
+      if (done < total) Alert.alert('Импорт завершён не полностью', `Скопировано ${done} из ${total}.`);
     } catch (e) {
+      setImporting(null);
       console.warn('import error:', e);
     }
   };
@@ -418,12 +440,19 @@ export default function FileBrowserScreen({ navigation }: Props) {
   };
 
   const createNewFile = async () => {
-    const path = await uniquePath(currentPath, 'Новый файл.md');
-    const name = path.split('/').pop() || 'Новый файл.md';
-    await FileSystem.writeAsStringAsync(path, `# ${name.replace(/\.md$/, '')}\n\n`);
+    const base = newFileName.trim().replace(/[\\/:*?"<>|]/g, '').replace(/\.(md|smd)$/i, '');
+    const fileName = (base || 'Новый файл') + '.' + newFileExt;
+    const path = await uniquePath(currentPath, fileName);
+    const name = path.split('/').pop() || fileName;
+    const seed = newFileExt === 'md' ? `# ${name.replace(/\.md$/, '')}\n\n` : `## ${name.replace(/\.smd$/, '')}\n\n`;
+    await FileSystem.writeAsStringAsync(path, seed);
     const entry = { name, uri: path, isDir: false, modifiedAt: Date.now() / 1000 };
     await recordRecent(entry);
-    navigation.navigate('Reader', { uri: path, title: name });
+    setShowNewFile(false);
+    setNewFileName('');
+    setNewFileExt('md');
+    loadDir(currentPath);
+    navigation.navigate('Editor', { uri: path, title: name });
   };
 
   // --- Перемещение: дерево целиком + крошки, один заход ---
@@ -618,10 +647,33 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const selInsideMove = [...selected].some((u) => movePath === u || movePath === u + '/' || movePath.startsWith(u.endsWith('/') ? u : u + '/'));
   const flatTree = moveTree ? flattenTree(moveTree, 0) : [];
 
+  // Счётчик и сортировка — в скролле, а не в липкой шапке
+  const headRow = !isSelecting ? (
+    <View style={s.listHead}>
+      <Text style={[s.sectionTitle, { color: theme.textSecondary }]}>
+        {tab === 'files' ? (entries.length ? `${entries.length} объектов` : 'Пусто') : `${recent.length} недавних`}
+      </Text>
+      {tab === 'files' && (
+        <Pressable onPress={() => setShowSort(true)} hitSlop={8} style={s.sortBtn}>
+          <Text style={[s.sortText, { color: theme.accent }]}>
+            {sortKey === 'name' ? 'Имя' : sortKey === 'date' ? 'Дата' : 'Размер'}
+          </Text>
+          <Ionicons name={sortAsc ? 'chevron-up' : 'chevron-down'} size={13} color={theme.accent} />
+        </Pressable>
+      )}
+    </View>
+  ) : null;
+
   return (
     <View style={[s.container, { backgroundColor: theme.bg }]}>
-      <View style={{ paddingTop: insets.top + 6, paddingHorizontal: 16 }}>
-        {/* Крупный заголовок + действия в строке навбара */}
+      {/* Шапка поверх списка: короткая, внизу плавно растворяется */}
+      <LinearGradient
+        colors={[theme.bg, theme.bg, theme.bg + '00']}
+        locations={[0, 0.72, 1]}
+        style={[s.topVeil, { paddingTop: insets.top + 2 }]}
+        onLayout={(e) => setHeadH(e.nativeEvent.layout.height)}
+        pointerEvents="box-none"
+      >
         <View style={s.navRow}>
           {pathParts.length > 0 && !isSelecting ? (
             <Pressable onPress={goBack} hitSlop={10} style={s.backChevron}>
@@ -655,7 +707,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
           )}
         </View>
 
-        {/* Крошки одной строкой — вместо отдельной панели */}
         {!isSelecting && tab === 'files' && (
           <View style={s.crumbRow}>
             <Pressable onPress={() => setCurrentPath(MD_READER_DIR)} hitSlop={6}>
@@ -676,69 +727,31 @@ export default function FileBrowserScreen({ navigation }: Props) {
             ))}
           </View>
         )}
-
-        {/* Поиск — настоящим полем, а не иконкой */}
-        {!isSelecting && (
-          <Pressable
-            onPress={() => { setQuery(''); setScope('files'); setSearchTag(null); setShowSearch(true); }}
-            style={[s.searchField, { backgroundColor: theme.fill }]}
-          >
-            <Ionicons name="search" size={17} color={theme.textSecondary} />
-            <Text style={[s.searchHint, { color: theme.textSecondary }]}>Поиск по файлам и тегам</Text>
-          </Pressable>
-        )}
-
-        {/* Строка списка: секция + сортировка текстом */}
-        {!isSelecting && (
-          <View style={s.listHead}>
-            <Text style={[s.sectionTitle, { color: theme.textSecondary }]}>
-              {tab === 'files' ? (entries.length ? `${entries.length} объектов` : 'Пусто') : `${recent.length} недавних`}
-            </Text>
-            {tab === 'files' && (
-              <Pressable onPress={() => setShowSort(!showSort)} hitSlop={8} style={s.sortBtn}>
-                <Text style={[s.sortText, { color: theme.accent }]}>
-                  {sortKey === 'name' ? 'Имя' : sortKey === 'date' ? 'Дата' : 'Размер'}
-                </Text>
-                <Ionicons name={sortAsc ? 'chevron-up' : 'chevron-down'} size={13} color={theme.accent} />
-              </Pressable>
-            )}
-          </View>
-        )}
-
-        {showSort && !isSelecting && (
-          <View style={[s.sortMenu, { backgroundColor: theme.surface, borderColor: theme.divider }]}>
-            {(['name', 'date', 'size'] as SortKey[]).map((k) => (
-              <Pressable
-                key={k}
-                onPress={() => { if (sortKey === k) setSortAsc(!sortAsc); else { setSortKey(k); setSortAsc(true); } setShowSort(false); }}
-                style={s.sortRow}
-              >
-                <Text style={[s.sortItem, { color: sortKey === k ? theme.accent : theme.text }]}>
-                  {k === 'name' ? 'По имени' : k === 'date' ? 'По дате' : 'По размеру'}
-                </Text>
-                {sortKey === k && <Ionicons name="checkmark" size={16} color={theme.accent} />}
-              </Pressable>
-            ))}
-          </View>
-        )}
-      </View>
+      </LinearGradient>
 
       {/* Content */}
       {tab === 'files' && (
         visibleEntries.length === 0 ? (
-          <View style={s.empty}>
+          <View style={[s.empty, { paddingTop: headH }]}>
             <Ionicons name="folder-open-outline" size={64} color={theme.border} />
             <Text style={[s.emptyText, { color: theme.textSecondary }]}>Папка пуста</Text>
             <Text style={[s.emptyHint, { color: theme.textSecondary }]}>Нажмите + чтобы создать файл или импортировать</Text>
           </View>
         ) : (
-          <FlatList data={visibleEntries} keyExtractor={(item) => item.uri} contentContainerStyle={s.list} renderItem={renderItem} />
+          <FlatList
+            data={visibleEntries}
+            keyExtractor={(item) => item.uri}
+            contentContainerStyle={[s.list, { paddingTop: headH + 2 }]}
+            ListHeaderComponent={headRow}
+            renderItem={renderItem}
+            keyboardShouldPersistTaps="handled"
+          />
         )
       )}
 
       {tab === 'recent' && (
         recent.length === 0 ? (
-          <View style={s.empty}>
+          <View style={[s.empty, { paddingTop: headH }]}>
             <Ionicons name="time-outline" size={64} color={theme.border} />
             <Text style={[s.emptyText, { color: theme.textSecondary }]}>Пока пусто</Text>
             <Text style={[s.emptyHint, { color: theme.textSecondary }]}>Открытые файлы появятся здесь</Text>
@@ -747,7 +760,8 @@ export default function FileBrowserScreen({ navigation }: Props) {
           <FlatList
             data={recent}
             keyExtractor={(item) => item.uri}
-            contentContainerStyle={s.list}
+            contentContainerStyle={[s.list, { paddingTop: headH + 2 }]}
+            ListHeaderComponent={headRow}
             renderItem={({ item }) => (
               <Pressable onPress={() => openStoredFile(item.uri, item.title)} style={[s.item, { borderBottomColor: theme.divider }]}>
                 <FileTypeIcon name={item.title} theme={theme} />
@@ -761,9 +775,36 @@ export default function FileBrowserScreen({ navigation }: Props) {
         )
       )}
 
+      {/* Поиск — круглая кнопка снизу справа, под большим пальцем */}
+      {!isSelecting && (
+        <Pressable
+          onPress={() => { setQuery(''); setScope('files'); setSearchTag(null); setShowSearch(true); }}
+          style={({ pressed }) => [
+            s.searchFab,
+            {
+              bottom: insets.bottom + 82,
+              backgroundColor: theme.glass,
+              borderColor: theme.glassLine,
+              opacity: pressed ? 0.82 : 1,
+            },
+          ]}
+        >
+          <Ionicons name="search" size={23} color={theme.text} />
+        </Pressable>
+      )}
+
+      {/* Прогресс импорта */}
+      {importing && (
+        <View pointerEvents="none" style={s.importWrap}>
+          <View style={[s.importBar, { backgroundColor: theme.isDark ? '#2C2C2E' : '#1C1C1E' }]}>
+            <Text style={s.undoText}>Импорт {importing.done} из {importing.total}</Text>
+          </View>
+        </View>
+      )}
+
       {/* Тост с откатом: удаление больше не «необратимо» */}
       {undo && (
-        <View pointerEvents="box-none" style={[s.undoWrap, { bottom: insets.bottom + 84 }]}>
+        <View pointerEvents="box-none" style={[s.undoWrap, { bottom: insets.bottom + 148 }]}>
           <View style={[s.undoBar, { backgroundColor: theme.isDark ? '#2C2C2E' : '#1C1C1E' }]}>
             <Text style={s.undoText} numberOfLines={1}>{undo.label}</Text>
             <Pressable onPress={undoDelete} hitSlop={10}><Text style={s.undoBtn}>Вернуть</Text></Pressable>
@@ -803,67 +844,77 @@ export default function FileBrowserScreen({ navigation }: Props) {
       </View>
 
       {/* Создать: шторка снизу */}
-      <Modal visible={showCreate} transparent animationType="fade" onRequestClose={() => setShowCreate(false)}>
-        <View style={s.sheetOverlay}>
-          <Pressable style={s.sheetBackdrop} onPress={() => setShowCreate(false)} />
-          <View style={[s.sheet, { backgroundColor: theme.surface, paddingBottom: insets.bottom + 12 }]}>
-            <View style={[s.sheetHandle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.22)' : theme.textTertiary }]} />
-            <Text style={[s.sheetTitle, { color: theme.text }]}>Создать</Text>
-            {([
-              ['document-text-outline', 'Новый файл', createNewFile],
-              ['folder-outline', 'Новая папка', () => setShowNewFolder(true)],
-              ['download-outline', 'Импорт из хранилища', importFile],
-            ] as const).map(([icon, label, onPress]) => (
-              <Pressable
-                key={label}
-                onPress={() => { setShowCreate(false); setTimeout(onPress as any, 180); }}
-                style={[s.actionRow, { borderBottomColor: theme.divider }]}
-              >
-                <Ionicons name={icon as any} size={22} color={theme.text} />
-                <Text style={[s.actionText, { color: theme.text }]}>{label}</Text>
-              </Pressable>
-            ))}
-            <Pressable onPress={() => setShowCreate(false)} style={[s.cancelRow, { backgroundColor: theme.fill }]}>
-              <Text style={[s.actionText, { color: theme.text }]}>Отмена</Text>
+      <Sheet visible={showCreate} onClose={() => setShowCreate(false)} bg={theme.surface} paddingBottom={insets.bottom + 12}>
+        <View style={s.sheet}>
+          <View style={[s.sheetHandle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.22)' : theme.textTertiary }]} />
+          <Text style={[s.sheetTitle, { color: theme.text }]}>Создать</Text>
+          {([
+            ['document-text-outline', 'Новый файл', () => setShowNewFile(true)],
+            ['folder-outline', 'Новая папка', () => setShowNewFolder(true)],
+            ['cloud-upload-outline', 'Импорт из хранилища', importFile],
+          ] as const).map(([icon, label, onPress]) => (
+            <Pressable
+              key={label}
+              onPress={() => { setShowCreate(false); setTimeout(onPress as any, 200); }}
+              style={[s.actionRow, { borderBottomColor: theme.divider }]}
+            >
+              <Ionicons name={icon as any} size={22} color={theme.text} />
+              <Text style={[s.actionText, { color: theme.text }]}>{label}</Text>
             </Pressable>
-          </View>
+          ))}
+          <Pressable onPress={() => setShowCreate(false)} style={[s.cancelRow, { backgroundColor: theme.fill }]}>
+            <Text style={[s.actionText, { color: theme.text }]}>Отмена</Text>
+          </Pressable>
         </View>
-      </Modal>
+      </Sheet>
+
+      {/* Сортировка: шторка вместо всплывающего меню */}
+      <Sheet visible={showSort} onClose={() => setShowSort(false)} bg={theme.surface} paddingBottom={insets.bottom + 12}>
+        <View style={s.sheet}>
+          <View style={[s.sheetHandle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.22)' : theme.textTertiary }]} />
+          <Text style={[s.sheetTitle, { color: theme.text }]}>Сортировка</Text>
+          {(['name', 'date', 'size'] as SortKey[]).map((k) => (
+            <Pressable
+              key={k}
+              onPress={() => { if (sortKey === k) setSortAsc(!sortAsc); else { setSortKey(k); setSortAsc(true); } setShowSort(false); }}
+              style={[s.actionRow, { borderBottomColor: theme.divider }]}
+            >
+              <Text style={[s.actionText, { color: theme.text, flex: 1 }]}>
+                {k === 'name' ? 'По имени' : k === 'date' ? 'По дате' : 'По размеру'}
+              </Text>
+              {sortKey === k && (
+                <>
+                  <Text style={[s.sortText, { color: theme.textSecondary }]}>{sortAsc ? 'А→Я' : 'Я→А'}</Text>
+                  <Ionicons name="checkmark" size={18} color={theme.accent} />
+                </>
+              )}
+            </Pressable>
+          ))}
+        </View>
+      </Sheet>
 
       {/* Ещё: служебные действия экрана */}
-      <Modal visible={showMore} transparent animationType="fade" onRequestClose={() => setShowMore(false)}>
-        <View style={s.sheetOverlay}>
-          <Pressable style={s.sheetBackdrop} onPress={() => setShowMore(false)} />
-          <View style={[s.sheet, { backgroundColor: theme.surface, paddingBottom: insets.bottom + 12 }]}>
-            <View style={[s.sheetHandle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.22)' : theme.textTertiary }]} />
-            <Text style={[s.sheetTitle, { color: theme.text }]}>{pathParts.length ? pathParts[pathParts.length - 1] : 'Мои файлы'}</Text>
-            <Pressable
-              onPress={() => { setShowMore(false); setTab('recent'); }}
-              style={[s.actionRow, { borderBottomColor: theme.divider }]}
-            >
-              <Ionicons name="time-outline" size={22} color={theme.text} />
-              <Text style={[s.actionText, { color: theme.text }]}>Недавние файлы</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => { setShowMore(false); setIsSelecting(true); }}
-              style={[s.actionRow, { borderBottomColor: theme.divider }]}
-            >
-              <Ionicons name="checkmark-circle-outline" size={22} color={theme.text} />
-              <Text style={[s.actionText, { color: theme.text }]}>Выбрать файлы</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => { setShowMore(false); navigation.navigate('Settings'); }}
-              style={[s.actionRow, { borderBottomColor: theme.divider }]}
-            >
-              <Ionicons name="options-outline" size={22} color={theme.text} />
-              <Text style={[s.actionText, { color: theme.text }]}>Настройки</Text>
-            </Pressable>
-            <Pressable onPress={() => setShowMore(false)} style={[s.cancelRow, { backgroundColor: theme.fill }]}>
-              <Text style={[s.actionText, { color: theme.text }]}>Отмена</Text>
-            </Pressable>
-          </View>
+      <Sheet visible={showMore} onClose={() => setShowMore(false)} bg={theme.surface} paddingBottom={insets.bottom + 12}>
+        <View style={s.sheet}>
+          <View style={[s.sheetHandle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.22)' : theme.textTertiary }]} />
+          <Text style={[s.sheetTitle, { color: theme.text }]}>{pathParts.length ? pathParts[pathParts.length - 1] : 'Мои файлы'}</Text>
+          <Pressable onPress={() => { setShowMore(false); setTab('recent'); }} style={[s.actionRow, { borderBottomColor: theme.divider }]}>
+            <Ionicons name="time-outline" size={22} color={theme.text} />
+            <Text style={[s.actionText, { color: theme.text }]}>Недавние файлы</Text>
+          </Pressable>
+          <Pressable onPress={() => { setShowMore(false); setIsSelecting(true); }} style={[s.actionRow, { borderBottomColor: theme.divider }]}>
+            <Ionicons name="checkmark-circle-outline" size={22} color={theme.text} />
+            <Text style={[s.actionText, { color: theme.text }]}>Выбрать файлы</Text>
+          </Pressable>
+          <Pressable onPress={() => { setShowMore(false); navigation.navigate('Settings'); }} style={[s.actionRow, { borderBottomColor: theme.divider }]}>
+            <Ionicons name="options-outline" size={22} color={theme.text} />
+            <Text style={[s.actionText, { color: theme.text }]}>Настройки</Text>
+          </Pressable>
+          <Pressable onPress={() => setShowMore(false)} style={[s.cancelRow, { backgroundColor: theme.fill }]}>
+            <Text style={[s.actionText, { color: theme.text }]}>Отмена</Text>
+          </Pressable>
         </View>
-      </Modal>
+      </Sheet>
 
       {/* ⋮-попап у кнопки */}
       <Popover
@@ -993,96 +1044,133 @@ export default function FileBrowserScreen({ navigation }: Props) {
         </View>
       </Modal>
 
-      {/* New Folder Modal */}
-      <Modal visible={showNewFolder} transparent animationType="fade">
-        <View style={s.modalOverlay}>
-          <View style={[s.modal, { backgroundColor: theme.surface }]}>
-            <Text style={[s.modalTitle, { color: theme.text }]}>Новая папка</Text>
-            <TextInput
-              style={[s.modalInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.bg }]}
-              placeholder="Имя папки"
-              placeholderTextColor={theme.textSecondary}
-              value={newFolderName}
-              onChangeText={setNewFolderName}
-              autoFocus
-            />
-            <View style={s.modalActions}>
-              <Pressable onPress={() => setShowNewFolder(false)} style={s.modalBtn}>
-                <Text style={[s.modalBtnText, { color: theme.textSecondary }]}>Отмена</Text>
+      {/* Новый файл: имя + расширение, а не «Новый файл.md» вслепую */}
+      <Sheet visible={showNewFile} onClose={() => setShowNewFile(false)} bg={theme.surface} paddingBottom={insets.bottom + 16}>
+        <View style={s.sheet}>
+          <View style={[s.sheetHandle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.22)' : theme.textTertiary }]} />
+          <Text style={[s.sheetTitle, { color: theme.text }]}>Новый файл</Text>
+          <TextInput
+            style={[s.modalInput, { borderColor: theme.divider, color: theme.text, backgroundColor: theme.bg }]}
+            placeholder="Имя без расширения"
+            placeholderTextColor={theme.textSecondary}
+            value={newFileName}
+            onChangeText={setNewFileName}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={createNewFile}
+          />
+          <View style={s.extRow}>
+            {(['md', 'smd'] as const).map((ext) => (
+              <Pressable
+                key={ext}
+                onPress={() => setNewFileExt(ext)}
+                style={[s.extChip, { borderColor: newFileExt === ext ? theme.accent : theme.divider, backgroundColor: newFileExt === ext ? theme.accentSoft : 'transparent' }]}
+              >
+                <Text style={[s.extText, { color: newFileExt === ext ? theme.accent : theme.textSecondary }]}>.{ext}</Text>
               </Pressable>
-              <Pressable onPress={createFolder} style={[s.modalBtn, { backgroundColor: theme.accent }]}>
-                <Text style={[s.modalBtnText, { color: '#FFF' }]}>Создать</Text>
-              </Pressable>
-            </View>
+            ))}
+          </View>
+          <View style={s.modalActions}>
+            <Pressable onPress={() => setShowNewFile(false)} style={s.modalBtn}>
+              <Text style={[s.modalBtnText, { color: theme.textSecondary }]}>Отмена</Text>
+            </Pressable>
+            <Pressable onPress={createNewFile} style={[s.modalBtn, { backgroundColor: theme.accent }]}>
+              <Text style={[s.modalBtnText, { color: theme.isDark ? '#000' : '#FFF' }]}>Создать</Text>
+            </Pressable>
           </View>
         </View>
-      </Modal>
+      </Sheet>
 
-      {/* Rename Modal */}
-      <Modal visible={!!showRename} transparent animationType="fade">
-        <View style={s.modalOverlay}>
-          <View style={[s.modal, { backgroundColor: theme.surface }]}>
-            <Text style={[s.modalTitle, { color: theme.text }]}>Переименовать</Text>
-            <TextInput
-              style={[s.modalInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.bg }]}
-              placeholder="Новое имя"
-              placeholderTextColor={theme.textSecondary}
-              value={renameName}
-              onChangeText={setRenameName}
-              autoFocus
-            />
-            <View style={s.modalActions}>
-              <Pressable onPress={() => setShowRename(null)} style={s.modalBtn}>
-                <Text style={[s.modalBtnText, { color: theme.textSecondary }]}>Отмена</Text>
-              </Pressable>
-              <Pressable onPress={renameEntry} style={[s.modalBtn, { backgroundColor: theme.accent }]}>
-                <Text style={[s.modalBtnText, { color: '#FFF' }]}>Готово</Text>
-              </Pressable>
-            </View>
+      {/* Новая папка */}
+      <Sheet visible={showNewFolder} onClose={() => setShowNewFolder(false)} bg={theme.surface} paddingBottom={insets.bottom + 16}>
+        <View style={s.sheet}>
+          <View style={[s.sheetHandle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.22)' : theme.textTertiary }]} />
+          <Text style={[s.sheetTitle, { color: theme.text }]}>Новая папка</Text>
+          <TextInput
+            style={[s.modalInput, { borderColor: theme.divider, color: theme.text, backgroundColor: theme.bg }]}
+            placeholder="Имя папки"
+            placeholderTextColor={theme.textSecondary}
+            value={newFolderName}
+            onChangeText={setNewFolderName}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={createFolder}
+          />
+          <View style={s.modalActions}>
+            <Pressable onPress={() => setShowNewFolder(false)} style={s.modalBtn}>
+              <Text style={[s.modalBtnText, { color: theme.textSecondary }]}>Отмена</Text>
+            </Pressable>
+            <Pressable onPress={createFolder} style={[s.modalBtn, { backgroundColor: theme.accent }]}>
+              <Text style={[s.modalBtnText, { color: theme.isDark ? '#000' : '#FFF' }]}>Создать</Text>
+            </Pressable>
           </View>
         </View>
-      </Modal>
+      </Sheet>
 
-      {/* Add Tag Modal */}
-      <Modal visible={!!tagFor} transparent animationType="fade">
-        <View style={s.modalOverlay}>
-          <View style={[s.modal, { backgroundColor: theme.surface }]}>
-            <Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>Тег: {tagFor?.name}</Text>
-            {(tags[tagFor?.uri || ''] || []).length > 0 && (
-              <View style={s.existingTags}>
-                {(tags[tagFor?.uri || ''] || []).map((t) => (
-                  <Pressable key={t} onPress={() => tagFor && removeTag(tagFor.uri, t)} style={[s.tagPill, { borderColor: theme.border }]}>
-                    <Text style={[s.tagPillText, { color: theme.text }]}>#{t} ✕</Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
-            <TextInput
-              style={[s.modalInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.bg }]}
-              placeholder="Новый тег (без #)"
-              placeholderTextColor={theme.textSecondary}
-              value={tagInput}
-              onChangeText={setTagInput}
-              autoFocus
-              autoCapitalize="none"
-              onSubmitEditing={addTag}
-            />
-            <View style={s.modalActions}>
-              <Pressable onPress={() => { setTagFor(null); setTagInput(''); }} style={s.modalBtn}>
-                <Text style={[s.modalBtnText, { color: theme.textSecondary }]}>Закрыть</Text>
-              </Pressable>
-              <Pressable onPress={addTag} style={[s.modalBtn, { backgroundColor: theme.accent }]}>
-                <Text style={[s.modalBtnText, { color: '#FFF' }]}>Добавить</Text>
-              </Pressable>
-            </View>
+      {/* Переименование */}
+      <Sheet visible={!!showRename} onClose={() => setShowRename(null)} bg={theme.surface} paddingBottom={insets.bottom + 16}>
+        <View style={s.sheet}>
+          <View style={[s.sheetHandle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.22)' : theme.textTertiary }]} />
+          <Text style={[s.sheetTitle, { color: theme.text }]}>Переименовать</Text>
+          <TextInput
+            style={[s.modalInput, { borderColor: theme.divider, color: theme.text, backgroundColor: theme.bg }]}
+            placeholder="Новое имя"
+            placeholderTextColor={theme.textSecondary}
+            value={renameName}
+            onChangeText={setRenameName}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={renameEntry}
+          />
+          <View style={s.modalActions}>
+            <Pressable onPress={() => setShowRename(null)} style={s.modalBtn}>
+              <Text style={[s.modalBtnText, { color: theme.textSecondary }]}>Отмена</Text>
+            </Pressable>
+            <Pressable onPress={renameEntry} style={[s.modalBtn, { backgroundColor: theme.accent }]}>
+              <Text style={[s.modalBtnText, { color: theme.isDark ? '#000' : '#FFF' }]}>Готово</Text>
+            </Pressable>
           </View>
         </View>
-      </Modal>
+      </Sheet>
+
+      {/* Теги */}
+      <Sheet visible={!!tagFor} onClose={() => { setTagFor(null); setTagInput(''); }} bg={theme.surface} paddingBottom={insets.bottom + 16}>
+        <View style={s.sheet}>
+          <View style={[s.sheetHandle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.22)' : theme.textTertiary }]} />
+          <Text style={[s.sheetTitle, { color: theme.text }]} numberOfLines={1}>Тег: {tagFor?.name}</Text>
+          {(tags[tagFor?.uri || ''] || []).length > 0 && (
+            <View style={s.existingTags}>
+              {(tags[tagFor?.uri || ''] || []).map((t) => (
+                <Pressable key={t} onPress={() => tagFor && removeTag(tagFor.uri, t)} style={[s.tagPill, { borderColor: theme.divider }]}>
+                  <Text style={[s.tagPillText, { color: theme.text }]}>#{t} ✕</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+          <TextInput
+            style={[s.modalInput, { borderColor: theme.divider, color: theme.text, backgroundColor: theme.bg }]}
+            placeholder="Новый тег (без #)"
+            placeholderTextColor={theme.textSecondary}
+            value={tagInput}
+            onChangeText={setTagInput}
+            autoFocus
+            autoCapitalize="none"
+            onSubmitEditing={addTag}
+          />
+          <View style={s.modalActions}>
+            <Pressable onPress={() => { setTagFor(null); setTagInput(''); }} style={s.modalBtn}>
+              <Text style={[s.modalBtnText, { color: theme.textSecondary }]}>Закрыть</Text>
+            </Pressable>
+            <Pressable onPress={addTag} style={[s.modalBtn, { backgroundColor: theme.accent }]}>
+              <Text style={[s.modalBtnText, { color: theme.isDark ? '#000' : '#FFF' }]}>Добавить</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Sheet>
 
       {/* Move Modal: дерево целиком + крошки */}
-      <Modal visible={showMove} transparent animationType="fade" onRequestClose={() => setShowMove(false)}>
-        <View style={s.modalOverlay}>
-          <View style={[s.moveModal, { backgroundColor: theme.surface }]}>
+      <Sheet visible={showMove} onClose={() => setShowMove(false)} bg={theme.surface} paddingBottom={insets.bottom + 16}>
+          <View style={s.moveModal}>
             <Text style={[s.modalTitle, { color: theme.text }]}>Переместить ({selected.size})</Text>
             <View style={s.moveCrumbs}>
               <Pressable onPress={() => navMovePath(MD_READER_DIR)}>
@@ -1156,12 +1244,11 @@ export default function FileBrowserScreen({ navigation }: Props) {
                 disabled={!moveDest || selInsideMove}
                 style={[s.modalBtn, { backgroundColor: moveDest && !selInsideMove ? theme.accent : theme.border }]}
               >
-                <Text style={[s.modalBtnText, { color: '#FFF' }]}>Сюда</Text>
+                <Text style={[s.modalBtnText, { color: theme.isDark ? '#000' : '#FFF' }]}>Сюда</Text>
               </Pressable>
             </View>
           </View>
-        </View>
-      </Modal>
+      </Sheet>
     </View>
   );
 }
@@ -1190,14 +1277,25 @@ function styles(theme: any, insets: any) {
     navActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
     navBtn: { padding: 7 },
     navBtnText: { ...tp.callout, fontFamily: uiFontOf(600) },
-    crumbRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, marginBottom: 12 },
+    topVeil: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20, paddingHorizontal: 16, paddingBottom: 18 },
+    searchFab: {
+      position: 'absolute', right: 18, width: 54, height: 54, borderRadius: 27,
+      alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth,
+      shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 8, zIndex: 30,
+    },
+    importWrap: { position: 'absolute', left: 16, right: 16, bottom: 24, alignItems: 'center' },
+    importBar: { borderRadius: 14, paddingHorizontal: 16, paddingVertical: 11 },
+    extRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+    extChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth },
+    extText: { ...tp.footnote, fontFamily: uiFontOf(500) },
+    crumbRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, marginBottom: 6 },
     crumb: { ...tp.footnote, fontFamily: uiFontOf(500), maxWidth: 150 },
     searchField: {
       flexDirection: 'row', alignItems: 'center', gap: 6,
       height: 36, borderRadius: 10, paddingHorizontal: 8, marginBottom: 14,
     },
     searchHint: { ...tp.callout },
-    listHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+    listHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
     sectionTitle: { ...tp.caption, fontFamily: uiFontOf(500), textTransform: 'uppercase', letterSpacing: 0.4 },
     sortBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingVertical: 4, paddingLeft: 8 },
     sortMenu: {

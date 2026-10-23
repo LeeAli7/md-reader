@@ -1,19 +1,28 @@
 {
   "plugins": [
     "expo-asset",
-    "expo-font"
+    "expo-font",
+    [
+      "expo-splash-screen",
+      {
+        "image": "./assets/splash.png",
+        "imageWidth": 180,
+        "resizeMode": "contain",
+        "backgroundColor": "#FFFFFF",
+        "dark": {
+          "image": "./assets/splash-dark.png",
+          "backgroundColor": "#000000"
+        }
+      }
+    ]
   ],
   "icon": "./assets/icon.png",
   "backgroundColor": "#FFFFFF",
-  "splash": {
-    "image": "./assets/splash.png",
-    "resizeMode": "cover",
-    "backgroundColor": "#FFFFFF"
-  },
   "android": {
     "adaptiveIcon": {
       "foregroundImage": "./assets/adaptive-icon.png",
-      "backgroundColor": "#FFFFFF"
+      "backgroundColor": "#0B0B0C",
+      "monochromeImage": "./assets/monochrome-icon.png"
     },
     "intentFilters": [
       {
@@ -135,12 +144,14 @@
         ]
       }
     ],
-    "package": "com.helloworld"
+    "package": "com.helloworld",
+    "versionCode": 2
   },
   "name": "Supreader",
   "slug": "supreader",
   "ios": {
     "bundleIdentifier": "com.supreader.app"
   },
-  "userInterfaceStyle": "automatic"
+  "userInterfaceStyle": "automatic",
+  "version": "1.1.0"
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import { View } from 'react-native';
 import { NavigationContainer, type NavigationContainerRef, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -12,6 +13,14 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import TaskChatScreen from './src/screens/TaskChatScreen';
 import { initIncomingFileListener } from './src/utils/incomingFile';
 import * as Font from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
+import SettingsInterfaceScreen from './src/screens/settings/InterfaceScreen';
+import SettingsReadingScreen from './src/screens/settings/ReadingScreen';
+import SettingsAiScreen from './src/screens/settings/AiScreen';
+
+// Держим нативную заставку до готовности шрифтов: иначе между сплэшем
+// и первым кадром мелькает пустой экран.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const Stack = createNativeStackNavigator();
 
@@ -38,7 +47,7 @@ const FONTS = {
   'JetBrainsMono-BoldItalic': require('@expo-google-fonts/jetbrains-mono/700Bold_Italic/JetBrainsMono_700Bold_Italic.ttf'),
 };
 
-// Статус-бар идёт за темой приложения, а не за системной: в КРОВИ он светлый,
+// Статус-бар идёт за темой приложения, а не за системной: в тёмной он светлый,
 // в чистом iOS — тёмный, независимо от настроек телефона.
 function ThemedStatusBar() {
   const { theme } = useTheme();
@@ -67,6 +76,9 @@ function Root({ navRef }: { navRef: React.MutableRefObject<NavigationContainerRe
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',
+          animationDuration: 280,
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
           contentStyle: { backgroundColor: theme.bg },
         }}
       >
@@ -75,6 +87,9 @@ function Root({ navRef }: { navRef: React.MutableRefObject<NavigationContainerRe
         <Stack.Screen name="TaskChat" component={TaskChatScreen} />
         <Stack.Screen name="Editor" component={EditorScreen as any} options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
+        <Stack.Screen name="SettingsInterface" component={SettingsInterfaceScreen} />
+        <Stack.Screen name="SettingsReading" component={SettingsReadingScreen} />
+        <Stack.Screen name="SettingsAi" component={SettingsAiScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
@@ -101,7 +116,10 @@ export default function App() {
         // любая ошибка загрузки — вечный чёрный экран. Теперь грузим что смогли.
         console.warn('[fonts] не загрузились, работаем на системных', e);
       } finally {
-        if (alive) setReady(true);
+        if (alive) {
+          setReady(true);
+          SplashScreen.hideAsync().catch(() => {});
+        }
       }
     })();
     return () => {
@@ -109,7 +127,8 @@ export default function App() {
     };
   }, []);
 
-  if (!ready) return null;
+  // Заставка ещё на экране — пустой кадр не рисуем, но и не мигаем белым.
+  if (!ready) return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
 
   return (
     <SafeAreaProvider>

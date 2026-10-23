@@ -47,6 +47,8 @@ export async function saveAiConfig(c: AiConfig): Promise<void> {
 export interface ChatMsg {
   role: 'user' | 'assistant';
   text: string;
+  /** Локальные uri картинок, чтобы они оставались видны в истории */
+  images?: string[];
 }
 
 export interface AttachedImage {
@@ -83,6 +85,41 @@ export async function loadChat(chatId: string): Promise<ChatMsg[]> {
   } catch {
     return [];
   }
+}
+
+// Дописать одно сообщение в историю, минуя экран: нужно, когда ответ
+// приходит уже после того, как человек вышел из чата.
+export async function appendChat(chatId: string, msg: ChatMsg): Promise<void> {
+  try {
+    const cur = await loadChat(chatId);
+    await saveChat(chatId, [...cur, msg]);
+  } catch {}
+}
+
+// Незавершённый запрос. Если приложение выгрузили из памяти, при следующем
+// входе его можно поднять и получить ответ, а не потерять вопрос.
+export interface PendingJob {
+  question: string;
+  full: string;
+  shown: string;
+  images: AttachedImage[];
+  ts: number;
+}
+
+export async function getPending(chatId: string): Promise<PendingJob | null> {
+  try {
+    const raw = await AsyncStorage.getItem(`${chatId}:pending`);
+    return raw ? (JSON.parse(raw) as PendingJob) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setPending(chatId: string, job: PendingJob | null): Promise<void> {
+  try {
+    if (job) await AsyncStorage.setItem(`${chatId}:pending`, JSON.stringify(job));
+    else await AsyncStorage.removeItem(`${chatId}:pending`);
+  } catch {}
 }
 
 export async function saveChat(chatId: string, msgs: ChatMsg[]): Promise<void> {
@@ -154,7 +191,7 @@ export async function askTask(
   const signal = opts instanceof AbortSignal ? opts : opts?.signal;
   const images = opts instanceof AbortSignal ? [] : opts?.images ?? [];
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 120000);
+  const timer = setTimeout(() => ctrl.abort(), 240000);
   const onAbort = () => ctrl.abort();
   signal?.addEventListener('abort', onAbort);
   const text = buildInput(task, solution, history, question);

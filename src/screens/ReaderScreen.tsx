@@ -27,6 +27,7 @@ import { CodeBlock } from '../components/CodeBlock';
 import { ReaderTOC, Heading } from '../components/ReaderTOC';
 import { ReadingProgressBar } from '../components/ReadingProgressBar';
 import { Popover } from '../components/Popover';
+import { DocSkeleton } from '../components/Skeleton';
 import type { MenuAction } from '../components/OverflowMenu';
 
 interface Props {
@@ -116,9 +117,11 @@ function useDoc(uri: string) {
   const [pages, setPages] = useState<string[]>([]);
   const [sheets, setSheets] = useState<SheetDoc[]>([]);
   const [sheetIdx, setSheetIdx] = useState(0);
+  const [loading, setLoading] = useState(!!uri);
   const mtimeRef = useRef(0);
   useEffect(() => {
-    if (!uri) { setContent(''); setKind('text'); return; }
+    if (!uri) { setContent(''); setKind('text'); setLoading(false); return; }
+    setLoading(true);
     let alive = true;
     (async () => {
       try {
@@ -178,6 +181,8 @@ function useDoc(uri: string) {
         setRev((r) => r + 1);
       } catch {
         if (alive) { setKind('text'); setContent('# Ошибка чтения файла\n\nНе удалось открыть файл.'); }
+      } finally {
+        if (alive) setLoading(false);
       }
     })();
     return () => { alive = false; };
@@ -208,7 +213,7 @@ function useDoc(uri: string) {
     const words = content.split(/\s+/).filter(Boolean).length;
     return { words, readTime: Math.max(1, Math.ceil(words / 200)) };
   }, [content]);
-  return { content, kind, rev, headings, chunks, stats, reload, reloadIfChanged, smdDoc, richHtml, pages, sheets, sheetIdx, setSheetIdx };
+  return { content, kind, rev, loading, headings, chunks, stats, reload, reloadIfChanged, smdDoc, richHtml, pages, sheets, sheetIdx, setSheetIdx };
 }
 
 const ChunkView = React.memo(function ChunkView({ text, mdStyle, rules }: { text: string; mdStyle: any; rules: any }) {
@@ -462,7 +467,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
       heading4: { ...h(1.02, '700', 14, 4), fontFamily: rs.boldFamily },
       heading5: { ...h(0.96, '700', 12, 4), fontFamily: rs.boldFamily },
       heading6: { color: rt.muted, fontSize: fontSize * 0.88, fontFamily: rs.boldFamily, marginTop: 10, marginBottom: 4 },
-      // Ссылки — единственный акцент: белый на КРОВИ, системный синий на светлом.
+      // Ссылки — единственный акцент: белый на тёмной, системный синий на светлом.
       link: { color: rt.dark ? '#FFFFFF' : '#0A84FF', textDecorationLine: 'underline' as const },
       code_inline: {
         backgroundColor: rt.fill,
@@ -675,7 +680,9 @@ export default function ReaderScreen({ route, navigation }: Props) {
           </Pressable>
         </View>
       )}
-      {dd.kind === 'image' ? (
+      {dd.loading ? (
+        <DocSkeleton color={rt.dark ? 'rgba(255,255,255,0.10)' : 'rgba(60,60,67,0.10)'} bg={rt.bg} />
+      ) : dd.kind === 'image' ? (
         <View style={[s.imageWrap, { backgroundColor: '#000' }]}>
           <Image source={{ uri: doc.uri }} style={s.image} resizeMode="contain" />
         </View>

@@ -41,7 +41,7 @@ interface Ctx extends Settings {
 }
 
 const DEFAULTS: Settings = {
-  // Интерфейс по умолчанию — чистый iOS (светлый). КРОВЬ включается вручную.
+  // Интерфейс по умолчанию — чистый iOS (светлый). Тёмная включается вручную.
   themeMode: 'light',
   readingTheme: DEFAULT_READING_THEME,
   font: DEFAULT_FONT_ID,
