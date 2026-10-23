@@ -75,6 +75,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
   const scrollRef = useRef<ScrollView | null>(null);
   const aliveRef = useRef(true);
   const resumedRef = useRef(false);
+  const inFlightRef = useRef(false);
 
   const bubbleText = { color: theme.text, fontSize: fontSize * 0.94, lineHeight: fontSize * 1.36 };
 
@@ -109,7 +110,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
   // Продолжение запроса: если в прошлый раз человек вышел, а ответ не пришёл,
   // поднимаем вопрос и досылаем его ещё раз — ответ допишется в ветку.
   const resumePending = useCallback(async () => {
-    if (resumedRef.current) return;
+    if (resumedRef.current || inFlightRef.current) return;
     const job = await getPending(chatId);
     if (!job || Date.now() - job.ts > PENDING_TTL) {
       if (job) await setPending(chatId, null);
@@ -118,6 +119,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
     resumedRef.current = true;
     setBusy(true);
     setErr(null);
+    inFlightRef.current = true;
     try {
       const answer = await askTask(task, solution, await loadChat(chatId), job.full, { images: job.images });
       await appendChat(chatId, { role: 'assistant', text: answer });
@@ -126,6 +128,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
       if (aliveRef.current) setErr(e?.message ?? String(e));
     } finally {
       await setPending(chatId, null);
+      inFlightRef.current = false;
       if (aliveRef.current) setBusy(false);
     }
   }, [chatId, task, solution]);
@@ -218,6 +221,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
     setAtt([]);
     setErr(null);
     setBusy(true);
+    inFlightRef.current = true;
 
     const job: PendingJob = { question, full: full || 'Объясни задачу.', shown, images, ts: Date.now() };
     await setPending(chatId, job);
@@ -233,6 +237,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
       })
       .finally(async () => {
         await setPending(chatId, null);
+        inFlightRef.current = false;
         if (aliveRef.current) setBusy(false);
       });
   };
