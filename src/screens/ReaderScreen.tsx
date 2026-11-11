@@ -815,6 +815,8 @@ export default function ReaderScreen({ route, navigation }: Props) {
                   mdStyle={mdStyle}
                   rt={rt}
                   fontSize={fontSize}
+                  fonts={{ regular: fontFamily, italic: rs.italicFamily, bold: rs.boldFamily, mono: 'JetBrainsMono' }}
+                  rules={rules}
                   docKey={doc.uri}
                   onAskTask={(t) => { setShowUI(true); navigation.navigate('TaskChat', t); }}
                   onBlockLayout={(i, y) => {

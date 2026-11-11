@@ -28,6 +28,7 @@ export type SmdBlock =
   | { type: 'summary'; body: string }
   | { type: 'meta-links'; links: MetaLink[]; body: string }
   | { type: 'formula'; body: string }
+  | { type: 'figure'; svg: string; caption?: string }
   | { type: 'task'; difficulty?: string; points?: string; body: string }
   | { type: 'spoiler'; title?: string; body: string }
   | { type: 'solution'; body: string }

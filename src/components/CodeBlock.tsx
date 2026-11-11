@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import { repairText } from '../smd/textFix';
 
-function CodeBlockInner({ code, rt }: { code: string; rt: { bg: string; text: string } }) {
+function CodeBlockInner({ code, rt, font }: { code: string; rt: { bg: string; text: string }; font?: string }) {
   const [copied, setCopied] = useState(false);
+  const text = repairText(code);
 
   const copy = async () => {
     try {
@@ -20,7 +22,7 @@ function CodeBlockInner({ code, rt }: { code: string; rt: { bg: string; text: st
         <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={16} color={rt.text + '80'} />
         {copied && <Text style={[s.hint, { color: rt.text + '80' }]}>Скопировано</Text>}
       </Pressable>
-      <Text selectable style={[s.code, { color: rt.text }]}>{code}</Text>
+      <Text selectable style={[s.code, { color: rt.text, fontFamily: font ?? 'JetBrainsMono' }]}>{text}</Text>
     </View>
   );
 }
@@ -32,5 +34,5 @@ const s = StyleSheet.create({
   wrap: { borderRadius: 8, padding: 16, paddingTop: 34, marginVertical: 8, position: 'relative' },
   btn: { position: 'absolute', top: 8, right: 8, flexDirection: 'row', alignItems: 'center', gap: 4, padding: 4 },
   hint: { fontSize: 11 },
-  code: { fontSize: 13, lineHeight: 20, fontFamily: 'FiraCode' },
+  code: { fontSize: 13, lineHeight: 20 },
 });

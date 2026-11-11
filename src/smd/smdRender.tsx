@@ -10,11 +10,23 @@ import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
 import type { SmdBlock, SmdDoc } from './smdTypes';
 import { askTask, chatIdFor, type ChatMsg } from './ai';
+import { MathView } from './MathView';
+import { SmdFigure } from './SmdFigure';
+import { repairText } from './textFix';
 
 interface Ctx {
   mdStyle: any;
   rt: any;
   fontSize: number;
+  fonts: MathFontsLike;
+  rules?: any;
+}
+
+export interface MathFontsLike {
+  regular: string;
+  italic: string;
+  bold: string;
+  mono: string;
 }
 
 
@@ -37,8 +49,8 @@ export function colors(rt: any) {
   };
 }
 
-export function SmdDocView({ doc, mdStyle, rt, fontSize, onBlockLayout, docKey, onAskTask }: { doc: SmdDoc; mdStyle: any; rt: any; fontSize: number; onBlockLayout?: (index: number, y: number) => void; docKey?: string; onAskTask?: (t: { chatId: string; title: string; task: string; solution: string }) => void }) {
-  const ctx: Ctx = { mdStyle, rt, fontSize };
+export function SmdDocView({ doc, mdStyle, rt, fontSize, fonts, rules, onBlockLayout, docKey, onAskTask }: { doc: SmdDoc; mdStyle: any; rt: any; fontSize: number; fonts: MathFontsLike; rules?: any; onBlockLayout?: (index: number, y: number) => void; docKey?: string; onAskTask?: (t: { chatId: string; title: string; task: string; solution: string }) => void }) {
+  const ctx: Ctx = { mdStyle, rt, fontSize, fonts, rules };
   return (
     <View>
       <SmdMetaHeader doc={doc} rt={rt} fontSize={fontSize} />
@@ -242,8 +254,23 @@ function BlockView({ block, ctx, blocks, index, docKey, onAskTask }: {
     case 'formula':
       return (
         <View style={[s.formula, { backgroundColor: ctx.rt.text + '0A', borderColor: ctx.rt.text + '20' }]}>
-          <Text style={[s.formulaText, { color: ctx.rt.text }]} selectable>{texToText(block.body.replace(/\$/g, ''))}</Text>
+          <MathView
+            source={block.body}
+            size={ctx.fontSize * 1.1}
+            color={ctx.rt.text}
+            fonts={{ regular: ctx.fonts.regular, italic: ctx.fonts.italic, bold: ctx.fonts.bold }}
+          />
         </View>
+      );
+    case 'figure':
+      return (
+        <SmdFigure
+          svg={block.svg}
+          caption={block.caption}
+          color={ctx.rt.text}
+          muted={ctx.rt.muted ?? ctx.rt.text + '80'}
+          fonts={{ regular: ctx.fonts.regular, bold: ctx.fonts.bold }}
+        />
       );
     case 'task':
       return <TaskAssist block={block} solution={solutionFor()} ctx={ctx} docKey={docKey} onAskTask={onAskTask} />;
@@ -366,11 +393,58 @@ function CardBlock({ front, back, ctx }: { front: string; back: string; ctx: Ctx
 
 // --- инлайн-подсветка: ==..== и {{cN::..}} внутри theory/def (тап открывает) ---
 
+/** $$..$$ и \[..\] на верхнем уровне режем отдельно: это блочная формула, её рисуем MathView. */
+function splitDisplayMath(body: string): { text?: string; math?: string }[] {
+  const out: { text?: string; math?: string }[] = [];
+  const re = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    if (m.index > last) out.push({ text: body.slice(last, m.index) });
+    out.push({ math: (m[1] ?? m[2] ?? '').trim() });
+    last = m.index + m[0].length;
+  }
+  if (last < body.length) out.push({ text: body.slice(last) });
+  return out.length > 0 ? out : [{ text: body }];
+}
+
+function MathBlock({ src, ctx }: { src: string; ctx: Ctx }) {
+  return (
+    <View style={[s.mathBlock, { borderColor: ctx.rt.text + '1A', backgroundColor: ctx.rt.text + '06' }]}>
+      <MathView
+        source={src}
+        size={ctx.fontSize * 1.08}
+        color={ctx.rt.text}
+        fonts={{ regular: ctx.fonts.regular, italic: ctx.fonts.italic, bold: ctx.fonts.bold }}
+      />
+    </View>
+  );
+}
+
 function RichText({ body, ctx }: { body: string; ctx: Ctx }) {
-  const pretty = prettifySpans(body);
-  const parts = splitCloze(pretty);
+  const segs = splitDisplayMath(body);
+  if (!segs.some((x) => x.math !== undefined)) {
+    return <InlineRich text={repairText(prettifySpans(body))} ctx={ctx} />;
+  }
+  return (
+    <View>
+      {segs.map((seg, i) => {
+        if (seg.math !== undefined) return <MathBlock key={i} src={seg.math} ctx={ctx} />;
+        const t = repairText(prettifySpans(seg.text ?? ''));
+        return t.trim() ? <InlineRich key={i} text={t} ctx={ctx} /> : null;
+      })}
+    </View>
+  );
+}
+
+function InlineRich({ text, ctx }: { text: string; ctx: Ctx }) {
+  const parts = splitCloze(text);
   if (!parts.some((p) => p.hidden)) {
-    return <Markdown style={ctx.mdStyle}>{pretty}</Markdown>;
+    return (
+      <Markdown style={ctx.mdStyle} rules={ctx.rules}>
+        {text}
+      </Markdown>
+    );
   }
   const [open, setOpen] = useState<number[]>([]);
   return (
@@ -908,6 +982,10 @@ const s = StyleSheet.create({
     borderWidth: 1, borderRadius: 8, padding: 12, marginVertical: 8,
   },
   formulaText: { fontFamily: 'JetBrainsMono', fontSize: 15, lineHeight: 22 },
+  mathBlock: {
+    borderWidth: StyleSheet.hairlineWidth, borderRadius: 10,
+    paddingVertical: 10, paddingHorizontal: 12, marginVertical: 8,
+  },
   reveal: { borderWidth: 1, borderRadius: 10, marginVertical: 8, overflow: 'hidden' },
   revealHead: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 },
   revealTitle: { flex: 1, fontWeight: '600' },

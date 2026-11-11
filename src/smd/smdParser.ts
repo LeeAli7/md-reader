@@ -305,6 +305,67 @@ function stripListMarker(line: string): string {
 
 // --- fence → SmdBlock[] ---
 
+/**
+ * Разворачивает вложенные директивы внутри тела блока.
+ * Автор пишет схему прямо в тексте главы:
+ *   :::theory
+ *   ...текст...
+ *   :::figure{...}<svg>…</svg>:::
+ *   ...текст...
+ *   :::
+ * и получает три блока подряд, а не «:::figure» простым текстом.
+ */
+function expandNested(body: string, warn: (msg: string, col?: number) => void): SmdBlock[] {
+  const out: SmdBlock[] = [];
+  const lines = body.split('\n');
+  let buf: string[] = [];
+  const flush = () => {
+    const t = buf.join('\n').trim();
+    buf = [];
+    if (t) out.push({ type: 'theory', body: t });
+  };
+  let i = 0;
+  while (i < lines.length) {
+    const s = lines[i].trim();
+    const om = !CODE_FENCE_RE.test(s) ? OPEN_RE.exec(s) : null;
+    if (om && !CLOSE_RE.test(s)) {
+      flush();
+      const ftype = om[1];
+      const attrs = parseAttrs(om[2] ?? '');
+      const inner: string[] = [];
+      i++;
+      let depth = 1;
+      let inFcode = false;
+      let closed = false;
+      while (i < lines.length) {
+        const t = lines[i].trim();
+        if (CODE_FENCE_RE.test(t)) {
+          inFcode = !inFcode;
+          inner.push(lines[i]);
+        } else if (!inFcode && CLOSE_RE.test(t)) {
+          depth--;
+          if (depth === 0) { closed = true; i++; break; }
+          inner.push(lines[i]);
+        } else if (!inFcode && OPEN_RE.test(t)) {
+          depth++;
+          inner.push(lines[i]);
+        } else {
+          inner.push(lines[i]);
+        }
+        i++;
+      }
+      if (!closed) warn(`вложенный :::${ftype} не закрыт — закрыт концом блока`, 0);
+      const fence: Fence = { type: ftype, attrs, body: inner.join('\n'), line: 0, col: 1 };
+      out.push(...fenceToBlocks(fence, warn));
+      continue;
+    }
+    buf.push(lines[i]);
+    i++;
+  }
+  flush();
+  return out;
+}
+
 function fenceToBlocks(f: Fence, warn: (msg: string, col?: number) => void): SmdBlock[] {
   const type = f.type.toLowerCase();
   const a = f.attrs;
@@ -312,8 +373,17 @@ function fenceToBlocks(f: Fence, warn: (msg: string, col?: number) => void): Smd
   const id = attrStr(a, 'id');
 
   switch (type) {
-    case 'theory':
-      return [{ type: 'theory', ...(id ? { id } : {}), body }];
+    case 'theory': {
+      const nested = expandNested(body, warn);
+      if (nested.length === 1 && nested[0].type === 'theory') {
+        return [{ type: 'theory', ...(id ? { id } : {}), body }];
+      }
+      // Якорь TOC остаётся на первом текстовом куске главы.
+      if (id && nested.length > 0 && nested[0].type === 'theory') {
+        (nested[0] as { type: 'theory'; id?: string }).id = id;
+      }
+      return nested.length > 0 ? nested : [{ type: 'theory', ...(id ? { id } : {}), body }];
+    }
     case 'def': {
       let term = attrStr(a, 'term');
       if (!term) {
@@ -334,6 +404,8 @@ function fenceToBlocks(f: Fence, warn: (msg: string, col?: number) => void): Smd
       return [{ type: 'theory', ...(id ? { id } : {}), body: `**Пример**\n\n${body}` }];
     case 'formula':
       return [{ type: 'formula', body: stripMathWrap(body) }];
+    case 'math':
+      return [{ type: 'formula', body: stripMathWrap(body) }];
     case 'compare-table': {
       const t = parseMdTable(body);
       if (!t) {
@@ -346,11 +418,23 @@ function fenceToBlocks(f: Fence, warn: (msg: string, col?: number) => void): Smd
       const src = attrStr(a, 'src') ?? '';
       const alt = attrStr(a, 'alt') ?? 'рисунок';
       const caption = attrStr(a, 'caption') ?? '';
+      // Инлайновый SVG в теле: схема живёт внутри .smd, без файлов и сети.
+      if (/<svg[\s>]/i.test(body)) {
+        return [{ type: 'figure', svg: body, ...(caption ? { caption } : {}) }];
+      }
       if (!src) {
-        warn(`:::figure без src (строка ${f.line})`);
+        warn(`:::figure без src и без <svg> в теле (строка ${f.line})`);
         return [{ type: 'theory', body }];
       }
       return [{ type: 'theory', body: `![${alt}](${src})${caption ? `\n*${caption}*` : ''}` }];
+    }
+    case 'svg': {
+      if (!/<svg[\s>]/i.test(body)) {
+        warn(`:::svg без <svg> в теле (строка ${f.line})`);
+        return [{ type: 'theory', body }];
+      }
+      const cap = attrStr(a, 'caption') ?? '';
+      return [{ type: 'figure', svg: body, ...(cap ? { caption: cap } : {}) }];
     }
     case 'spoiler':
       return [{ type: 'spoiler', ...(attrStr(a, 'title') ? { title: attrStr(a, 'title')! } : {}), body }];
