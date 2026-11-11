@@ -342,7 +342,7 @@ function Reveal({ title, body, icon, ctx }: { title: string; body: string; icon:
       </Pressable>
       {open && (
         <View style={s.revealBody}>
-          <Markdown style={ctx.mdStyle}>{prettifySpans(body)}</Markdown>
+          <RichText body={body} ctx={ctx} />
         </View>
       )}
     </View>
