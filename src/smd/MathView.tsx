@@ -28,6 +28,8 @@ function TextRun({ v, it, up, st }: { v: string; it?: boolean; up?: boolean; st:
         fontSize: st.size,
         lineHeight: st.size * 1.28,
         color: st.color,
+        includeFontPadding: false,
+        textAlignVertical: 'center',
         fontFamily: up ? st.fonts.regular : it ? st.fonts.italic : st.fonts.regular,
       }}
     >
@@ -57,6 +59,7 @@ function NodeView({ n, st }: { n: MathNode; st: St }) {
             fontSize: st.size * 1.45,
             lineHeight: st.size * 1.45,
             color: st.color,
+            includeFontPadding: false,
             fontFamily: st.fonts.regular,
             marginHorizontal: st.size * 0.06,
           }}
@@ -76,7 +79,7 @@ function NodeView({ n, st }: { n: MathNode; st: St }) {
             style={{
               height: RULE,
               alignSelf: 'stretch',
-              minWidth: st.size * 0.9,
+              minWidth: st.size * 0.5,
               backgroundColor: st.color,
               marginVertical: 2,
             }}
@@ -88,39 +91,9 @@ function NodeView({ n, st }: { n: MathNode; st: St }) {
       );
     }
 
-    case 'sqrt': {
-      const inner: St = { ...st, size: st.size * 0.98, depth: st.depth + 1 };
-      return (
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-          {n.i ? (
-            <View style={{ marginRight: -st.size * 0.16, marginTop: -st.size * 0.28 }}>
-              <NodeView n={n.i} st={{ ...st, size: st.size * 0.58 }} />
-            </View>
-          ) : null}
-          <Text
-            style={{
-              fontSize: st.size * 1.18,
-              lineHeight: st.size * 1.2,
-              color: st.color,
-              fontFamily: st.fonts.regular,
-            }}
-          >
-            √
-          </Text>
-          <View
-            style={{
-              borderTopWidth: RULE,
-              borderColor: st.color,
-              paddingTop: 1.5,
-              paddingHorizontal: 2,
-              marginLeft: -1,
-            }}
-          >
-            <NodeView n={n.b} st={inner} />
-          </View>
-        </View>
-      );
-    }
+    case 'sqrt':
+      return <SqrtView n={n} st={st} />;
+
 
     case 'script': {
       const small: St = { ...st, size: st.size * 0.62, depth: st.depth };
@@ -157,6 +130,73 @@ function NodeView({ n, st }: { n: MathNode; st: St }) {
       return null;
   }
 }
+
+// Корень рисуется вектором (две линии), а не глифом «√»:
+// глиф не тянется на высоту дроби и его лапка висит в воздухе.
+function Radical({ h, w, t, color }: { h: number; w: number; t: number; color: string }) {
+  const seg = (ax: number, ay: number, bx: number, by: number, key: string) => {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = Math.hypot(dx, dy);
+    const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
+    return (
+      <View
+        key={key}
+        style={{
+          position: 'absolute',
+          left: (ax + bx) / 2 - len / 2,
+          top: (ay + by) / 2 - t / 2,
+          width: len,
+          height: t,
+          backgroundColor: color,
+          transform: [{ rotate: `${ang}deg` }],
+        }}
+      />
+    );
+  };
+  return (
+    <View style={{ width: w, height: h }}>
+      {seg(0, h * 0.58, w * 0.2, h, 'a')}
+      {seg(w * 0.2, h, w, 0, 'b')}
+    </View>
+  );
+}
+
+function SqrtView({ n, st }: { n: Extract<MathNode, { k: 'sqrt' }>; st: St }) {
+  const [h, setH] = React.useState(0);
+  const inner: St = { ...st, size: st.size * 0.98, depth: st.depth + 1 };
+  const tall = n.b.k === 'frac';
+  const est = st.size * (tall ? 2.45 : 1.05);
+  const hh = h || est;
+  const w = Math.max(st.size * 0.38, hh * 0.44);
+  const t = Math.max(1, st.size * 0.055);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+      {n.i ? (
+        <View style={{ alignSelf: 'flex-start', marginTop: -st.size * 0.14, marginRight: -st.size * 0.04 }}>
+          <NodeView n={n.i} st={{ ...st, size: st.size * 0.48 }} />
+        </View>
+      ) : null}
+      <Radical h={hh} w={w} t={t} color={st.color} />
+      <View
+        onLayout={(e) => {
+          const nh = e.nativeEvent.layout.height;
+          if (nh > 0 && Math.abs(nh - h) > 0.5) setH(nh);
+        }}
+        style={{
+          borderTopWidth: RULE,
+          borderColor: st.color,
+          paddingTop: 2,
+          paddingHorizontal: 2,
+          marginLeft: -1,
+        }}
+      >
+        <NodeView n={n.b} st={inner} />
+      </View>
+    </View>
+  );
+}
+
 
 /** Блочная формула: строки — по \\ в исходнике. */
 export function MathView({
