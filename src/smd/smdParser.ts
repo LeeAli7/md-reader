@@ -406,11 +406,25 @@ function fenceToBlocks(f: Fence, warn: (msg: string, col?: number) => void): Smd
       return [{ type: 'formula', body: stripMathWrap(body) }];
     case 'math':
       return [{ type: 'formula', body: stripMathWrap(body) }];
+    case 'table':
     case 'compare-table': {
       const t = parseMdTable(body);
       if (!t) {
-        warn(`:::compare-table без markdown-таблицы в теле (строка ${f.line})`);
+        warn('compare-table без markdown-таблицы в теле — блок как theory');
         return [{ type: 'theory', body }];
+      }
+      const colsAttr = attrStr(a, 'cols');
+      if (colsAttr) {
+        const m = /^\s*(\d+)\s*(?:\.\.\s*(\d+))?\s*$/.exec(colsAttr);
+        if (!m) {
+          warn(`compare-table: cols='${colsAttr}' не разобрано`);
+        } else {
+          const lo = Number(m[1]);
+          const hi = Number(m[2] ?? m[1]);
+          if (!(t.head.length >= lo && t.head.length <= hi)) {
+            warn(`compare-table: колонок ${t.head.length}, cols='${colsAttr}'`);
+          }
+        }
       }
       return [{ type: 'compare-table', head: t.head, rows: t.rows }];
     }

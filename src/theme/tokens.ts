@@ -90,6 +90,8 @@ export type ReadingTheme = {
   muted: string;
   rule: string;
   fill: string;
+  /** Ссылка — единственный цветной акцент в тексте. */
+  link: string;
   dark: boolean;
 };
 
@@ -102,6 +104,7 @@ export const readingThemes: ReadingTheme[] = [
     muted: 'rgba(16,16,18,0.55)',
     rule: 'rgba(16,16,18,0.9)',
     fill: 'rgba(118,118,128,0.12)',
+    link: '#0A6CD8',
     dark: false,
   },
   {
@@ -112,6 +115,7 @@ export const readingThemes: ReadingTheme[] = [
     muted: 'rgba(250,250,250,0.55)',
     rule: 'rgba(250,250,250,0.9)',
     fill: 'rgba(120,120,128,0.24)',
+    link: '#FFFFFF',
     dark: true,
   },
   {
@@ -122,6 +126,7 @@ export const readingThemes: ReadingTheme[] = [
     muted: 'rgba(91,70,54,0.62)',
     rule: 'rgba(91,70,54,0.85)',
     fill: 'rgba(91,70,54,0.10)',
+    link: '#7A4B12',
     dark: false,
   },
   {
@@ -132,6 +137,7 @@ export const readingThemes: ReadingTheme[] = [
     muted: 'rgba(235,235,245,0.55)',
     rule: 'rgba(235,235,245,0.85)',
     fill: 'rgba(120,120,128,0.26)',
+    link: '#FFFFFF',
     dark: true,
   },
 ];

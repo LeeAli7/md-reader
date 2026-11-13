@@ -14,7 +14,7 @@ import { getRecent, pushRecent, getPosition, setPosition, getPositionSync, prime
 import { getFolderTree, type FolderNode } from '../utils/folderTree';
 import { loadReadable, themeRichHtml } from '../utils/documentLoader';
 import PdfView from '../components/PdfView';
-import { SmdDocView } from '../smd/smdRender';
+import { SmdDocView, SegmentedMarkdown } from '../smd/smdRender';
 import { mockSmdDoc, mockRichDoc, mockPages } from '../smd/smdMock';
 import { parseSmd, smdToc } from '../smd/smdParser';
 import type { SmdDoc, SheetDoc } from '../smd/smdTypes';
@@ -246,8 +246,16 @@ function useDoc(uri: string) {
   return { content, kind, rev, loading, headings, chunks, stats, reload, reloadIfChanged, smdDoc, richHtml, pages, sheets, sheetIdx, setSheetIdx };
 }
 
-const ChunkView = React.memo(function ChunkView({ text, mdStyle, rules }: { text: string; mdStyle: any; rules: any }) {
-  return <Markdown rules={rules} style={mdStyle}>{text}</Markdown>;
+const ChunkView = React.memo(function ChunkView({ text, mdStyle, rules, rt, fontSize, boldFamily, italicFamily }: {
+  text: string; mdStyle: any; rules: any; rt: any; fontSize: number;
+  boldFamily?: string; italicFamily?: string;
+}) {
+  return (
+    <SegmentedMarkdown
+      text={text} mdStyle={mdStyle} rules={rules} rt={rt}
+      fontSize={fontSize} boldFamily={boldFamily} italicFamily={italicFamily}
+    />
+  );
 });
 
 // Постраничный текст (pptx/odt/epub от Ares): одна страница + навигация.
@@ -271,7 +279,7 @@ function PagesView({ uri, pages, mdStyle, rules, rt }: { uri: string; pages: str
   return (
     <View style={{ flex: 1 }}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
-        <Markdown rules={rules} style={mdStyle}>{pages[i] ?? ''}</Markdown>
+        <SegmentedMarkdown text={pages[i] ?? ''} mdStyle={mdStyle} rules={rules} rt={rt} fontSize={16} />
       </ScrollView>
       {total > 1 && (
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 6, borderTopWidth: 1, borderTopColor: rt.text + '15', backgroundColor: rt.bg }}>
@@ -500,7 +508,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
       heading5: { ...h(0.96, '700', 12, 4), fontFamily: rs.boldFamily },
       heading6: { color: rt.muted, fontSize: fontSize * 0.88, fontFamily: rs.boldFamily, marginTop: 10, marginBottom: 4 },
       // Ссылки — единственный акцент: белый на тёмной, системный синий на светлом.
-      link: { color: rt.dark ? '#FFFFFF' : '#0A84FF', textDecorationLine: 'underline' as const },
+      link: { color: rt.link, textDecorationLine: 'underline' as const },
       code_inline: {
         backgroundColor: rt.fill,
         color: rt.text, fontSize: fontSize * 0.88, borderRadius: 5,
@@ -516,12 +524,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
         paddingVertical: 2,
         paddingRight: 4,
       },
-      table: { borderWidth: 1, borderColor: cellBorder, borderRadius: 10, marginVertical: 10, overflow: 'hidden' as const },
-      thead: {},
-      tbody: {},
-      th: { backgroundColor: rt.fill, padding: 10, fontFamily: rs.boldFamily, borderBottomWidth: 1, borderColor: cellBorder },
-      td: { padding: 10, borderTopWidth: StyleSheet.hairlineWidth, borderColor: cellBorder },
-      tr: { borderBottomWidth: 0 },
+      // Таблицы не стилями: markdown-display 7 их не парсит, рисует SmdTable.
       hr: { backgroundColor: rt.fill, height: 1, marginVertical: 20 },
       list_item: { color: rt.text, fontSize, lineHeight: fontSize * lineHeight, marginVertical: 2 },
       bullet_list: { marginVertical: 8 },
@@ -827,7 +830,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
                 />
               );
             }
-            return <ChunkView text={item.text} mdStyle={mdStyle} rules={rules} />;
+            return <ChunkView text={item.text} mdStyle={mdStyle} rules={rules} rt={rt} fontSize={fontSize} boldFamily={rs.boldFamily} italicFamily={rs.italicFamily} />;
           }}
           onScroll={makeOnScroll(doc.uri, !isSplit)}
           onContentSizeChange={makeContentSize(doc.uri, dd.chunks.length, dd.rev)}

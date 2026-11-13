@@ -4,12 +4,14 @@
 
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, ScrollView, TextInput, ActivityIndicator,
+  View, Text, Pressable, StyleSheet, ScrollView, TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
+import { SmdTable } from './SmdTable';
+import { splitTables } from './table';
 import type { SmdBlock, SmdDoc } from './smdTypes';
-import { askTask, chatIdFor, type ChatMsg } from './ai';
+import { chatIdFor } from './ai';
 import { MathView } from './MathView';
 import { SmdFigure } from './SmdFigure';
 import { repairText } from './textFix';
@@ -90,98 +92,66 @@ function SmdMetaHeader({ doc, rt, fontSize }: { doc: SmdDoc; rt: any; fontSize: 
   );
 }
 
-// --- задача + «Спросить»: вопросы с контекстом задачи через zen-прокси ---
+// --- задача: условие + решение + уход в ветку чата ---
 
 function TaskAssist({ block, solution, ctx, docKey, onAskTask }: {
   block: Extract<SmdBlock, { type: 'task' }>; solution: string; ctx: Ctx; docKey?: string;
   onAskTask?: (t: { chatId: string; title: string; task: string; solution: string }) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState('');
-  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const cl = colors(ctx.rt);
+  const [showSolution, setShowSolution] = useState(false);
   const openBranch = () => {
-    if (!onAskTask) {
-      setOpen(!open);
-      return;
-    }
-    const { chatIdFor: cid } = { chatIdFor };
+    if (!onAskTask) return;
     onAskTask({
-      chatId: cid(docKey ?? '', block.body),
+      chatId: chatIdFor(docKey ?? '', block.body),
       title: block.body.split('\n')[0].slice(0, 60) || 'Вопрос по задаче',
       task: block.body,
       solution,
     });
   };
-  const send = async () => {
-    const question = q.trim();
-    if (!question || busy) return;
-    setQ('');
-    setErr(null);
-    setBusy(true);
-    const hist = [...msgs];
-    setMsgs((p) => [...p, { role: 'user', text: question }]);
-    try {
-      const answer = await askTask(block.body, solution, hist, question);
-      setMsgs((p) => [...p, { role: 'assistant', text: answer }]);
-    } catch (e: any) {
-      setErr(e?.message ?? String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
   return (
-    <View style={[s.card, { borderColor: colors(ctx.rt).goldLine, backgroundColor: colors(ctx.rt).goldBg }]}>
+    <View style={[s.block, { borderColor: ctx.rt.rule }]}>
       <View style={s.cardHead}>
-        <Ionicons name="pencil-outline" size={16} color={colors(ctx.rt).gold} />
-        <Text style={[s.cardLabel, { color: colors(ctx.rt).gold }]}>
-          Задача{block.difficulty ? ` · сложность ${block.difficulty}` : ''}{block.points ? ` · ${block.points} б.` : ''}
+        <Text style={[s.cardLabel, { color: ctx.rt.muted }]}>
+          Задача
+        </Text>
+        <Text style={[s.cardMeta, { color: ctx.rt.muted }]}>
+          {block.difficulty ? `${block.difficulty}` : ''}
+          {block.difficulty && block.points ? ' · ' : ''}
+          {block.points ? `${block.points} б.` : ''}
         </Text>
       </View>
-      <RichText body={prettifySpans(block.body)} ctx={ctx} />
-      <Pressable onPress={openBranch} style={s.askBtn} hitSlop={6}>
-        <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors(ctx.rt).blue} />
-        <Text style={[s.askBtnText, { color: colors(ctx.rt).blue }]}>{onAskTask ? 'Спросить в ветке' : open ? 'Скрыть вопросы' : 'Спросить по задаче'}</Text>
-      </Pressable>
-      {open && (
-        <View style={{ marginTop: 8 }}>
-          {msgs.map((m, i) => (
-            <View
-              key={i}
-              style={[s.chatMsg, m.role === 'user'
-                ? { alignSelf: 'flex-end', backgroundColor: colors(ctx.rt).blueBg }
-                : { alignSelf: 'flex-start', backgroundColor: ctx.rt.text + '0D' }]}
-            >
-              <Text style={{ color: ctx.rt.text, fontSize: ctx.fontSize * 0.92, lineHeight: 20 }}>{m.text}</Text>
-            </View>
-          ))}
-          {busy && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 6 }}>
-              <ActivityIndicator size="small" color={colors(ctx.rt).blue} />
-              <Text style={{ color: ctx.rt.text + '60', fontSize: 13 }}>Думаю над задачей…</Text>
-            </View>
-          )}
-          {err ? (
-            <Text style={{ color: colors(ctx.rt).no, fontSize: 13, marginVertical: 4 }}>{err}</Text>
-          ) : null}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
-            <TextInput
-              style={[s.freeInput, { flex: 1, borderColor: ctx.rt.text + '30', color: ctx.rt.text, fontSize: ctx.fontSize * 0.92, marginBottom: 0 }]}
-              placeholder="Твой вопрос…"
-              placeholderTextColor={ctx.rt.text + '50'}
-              value={q}
-              onChangeText={setQ}
-              onSubmitEditing={send}
-              returnKeyType="send"
-              editable={!busy}
-            />
-            <Pressable onPress={send} disabled={busy || !q.trim()} hitSlop={8} style={[s.sendBtn, { opacity: busy || !q.trim() ? 0.4 : 1 }]}>
-              <Ionicons name="send" size={20} color={colors(ctx.rt).blue} />
-            </Pressable>
-          </View>
+      <RichText body={block.body} ctx={ctx} />
+
+      {solution ? (
+        <Pressable
+          onPress={() => setShowSolution((v) => !v)}
+          style={s.actionRow}
+          hitSlop={4}
+        >
+          <Ionicons
+            name={showSolution ? 'chevron-up' : 'reader-outline'}
+            size={17}
+            color={ctx.rt.text}
+          />
+          <Text style={[s.actionText, { color: ctx.rt.text }]}>
+            {showSolution ? 'Скрыть решение' : 'Показать решение'}
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {showSolution && solution ? (
+        <View style={[s.solutionBody, { borderColor: ctx.rt.rule }]}>
+          <RichText body={solution} ctx={ctx} />
         </View>
-      )}
+      ) : null}
+
+      {onAskTask ? (
+        <Pressable onPress={openBranch} style={s.actionRow} hitSlop={4}>
+          <Ionicons name="chatbubble-ellipses-outline" size={17} color={cl.blue} />
+          <Text style={[s.actionText, { color: cl.blue }]}>Спросить в ветке</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -244,8 +214,8 @@ function BlockView({ block, ctx, blocks, index, docKey, onAskTask }: {
       return <RichText body={block.body} ctx={ctx} />;
     case 'def':
       return (
-        <View style={[s.def, { borderLeftColor: colors(ctx.rt).mute, backgroundColor: ctx.rt.text + '08' }]}>
-          <Text style={[s.defTerm, { color: ctx.rt.text, fontSize: ctx.fontSize * 1.1 }]}>
+        <View style={[s.def, { borderLeftColor: ctx.rt.rule }]}>
+          <Text style={[s.cardLabel, { color: ctx.rt.muted }]}>
             {block.term ?? 'Определение'}
           </Text>
           <RichText body={block.body} ctx={ctx} />
@@ -292,19 +262,19 @@ function BlockView({ block, ctx, blocks, index, docKey, onAskTask }: {
       return <CompareTable head={block.head} rows={block.rows} ctx={ctx} />;
     case 'theorem':
       return (
-        <View style={[s.def, { borderLeftColor: colors(ctx.rt).blue, backgroundColor: ctx.rt.text + '08' }]}>
-          <Text style={[s.defTerm, { color: ctx.rt.text, fontSize: ctx.fontSize * 1.1 }]}>
-            {block.name ?? 'Теорема'}
+        <View style={[s.block, { borderColor: ctx.rt.rule, backgroundColor: ctx.rt.fill }]}>
+          <Text style={[s.cardLabel, { color: ctx.rt.muted }]}>
+            Теорема{block.name ? ` · ${block.name}` : ''}
           </Text>
           <RichText body={block.body} ctx={ctx} />
         </View>
       );
     case 'proof':
-      return <Reveal title="Доказательство" body={block.body} icon="checkmark-circle-outline" ctx={ctx} />;
+      return <Reveal title="Доказательство" body={block.body} icon="document-text-outline" ctx={ctx} />;
     case 'summary':
       return (
-        <View style={[s.def, { borderLeftColor: colors(ctx.rt).ok, backgroundColor: ctx.rt.text + '08' }]}>
-          <Text style={[s.defTerm, { color: ctx.rt.text, fontSize: ctx.fontSize * 1.1 }]}>Выжимка</Text>
+        <View style={[s.block, { borderColor: ctx.rt.rule, backgroundColor: ctx.rt.fill }]}>
+          <Text style={[s.cardLabel, { color: ctx.rt.muted }]}>Выжимка</Text>
           <RichText body={block.body} ctx={ctx} />
         </View>
       );
@@ -424,24 +394,105 @@ function MathBlock({ src, ctx }: { src: string; ctx: Ctx }) {
 function RichText({ body, ctx }: { body: string; ctx: Ctx }) {
   const segs = splitDisplayMath(body);
   if (!segs.some((x) => x.math !== undefined)) {
-    return <InlineRich text={repairText(prettifySpans(body))} ctx={ctx} />;
+    return <BodySegments body={body} ctx={ctx} />;
   }
   return (
     <View>
       {segs.map((seg, i) => {
         if (seg.math !== undefined) return <MathBlock key={i} src={seg.math} ctx={ctx} />;
-        const t = repairText(prettifySpans(seg.text ?? ''));
-        return t.trim() ? <InlineRich key={i} text={t} ctx={ctx} /> : null;
+        return seg.text && seg.text.trim() ? <BodySegments key={i} body={seg.text} ctx={ctx} /> : null;
       })}
+    </View>
+  );
+}
+
+/** Тело блока → абзацы markdown + собственные таблицы (GFM внутри theory/def). */
+function BodySegments({ body, ctx }: { body: string; ctx: Ctx }) {
+  const segs = useMemo(() => splitTables(body), [body]);
+  if (segs.length === 1 && segs[0].kind === 'text') {
+    return <InlineRich text={repairText(prettifySpans(body))} ctx={ctx} />;
+  }
+  return (
+    <View>
+      {segs.map((seg, i) =>
+        seg.kind === 'table' ? (
+          <SmdTable
+            key={i}
+            table={seg.table}
+            rt={ctx.rt}
+            fontSize={ctx.fontSize}
+            boldFamily={ctx.fonts.bold}
+            italicFamily={ctx.fonts.italic}
+          />
+        ) : (
+          <InlineRich key={i} text={repairText(prettifySpans(seg.text))} ctx={ctx} />
+        ),
+      )}
+    </View>
+  );
+}
+
+const TEXT_LIKE = (c: any) =>
+  typeof c === 'string' ||
+  typeof c === 'number' ||
+  (React.isValidElement(c) && (c.type as any) === Text);
+
+/**
+ * Выделение живёт на абзаце/заголовке: тогда жирный и курсив внутри абзаца
+ * выделяются вместе с ним. Абзац с картинкой (View внутри) оставляем View —
+ * Android не умеет вкладывать View в Text.
+ */
+export function selectableRules(style: any, extra?: any) {
+  const wrap = (key: string) => (node: any, children: any[]) =>
+    children.every(TEXT_LIKE) ? (
+      <Text key={node.key} selectable style={style?.[key]}>
+        {children}
+      </Text>
+    ) : (
+      <View key={node.key} style={style?.[key]}>
+        {children}
+      </View>
+    );
+  return {
+    paragraph: wrap('paragraph'),
+    heading1: wrap('heading1'),
+    heading2: wrap('heading2'),
+    heading3: wrap('heading3'),
+    heading4: wrap('heading4'),
+    heading5: wrap('heading5'),
+    heading6: wrap('heading6'),
+    ...(extra ?? {}),
+  };
+}
+
+/** Тот же сегментер таблиц, но для .md/страниц: без .smd-контекста. */
+export function SegmentedMarkdown({ text, mdStyle, rules, rt, fontSize, boldFamily, italicFamily }: {
+  text: string; mdStyle: any; rules?: any; rt: any; fontSize: number;
+  boldFamily?: string; italicFamily?: string;
+}) {
+  const segs = useMemo(() => splitTables(text), [text]);
+  const mdRules = useMemo(() => selectableRules(mdStyle, rules), [mdStyle, rules]);
+  return (
+    <View>
+      {segs.map((seg, i) =>
+        seg.kind === 'table' ? (
+          <SmdTable key={i} table={seg.table} rt={rt} fontSize={fontSize} boldFamily={boldFamily} italicFamily={italicFamily} />
+        ) : (
+          <Markdown key={i} style={mdStyle} rules={mdRules}>
+            {repairText(prettifySpans(seg.text))}
+          </Markdown>
+        ),
+      )}
     </View>
   );
 }
 
 function InlineRich({ text, ctx }: { text: string; ctx: Ctx }) {
   const parts = splitCloze(text);
+  const rules = useMemo(() => selectableRules(ctx.mdStyle, ctx.rules), [ctx.mdStyle, ctx.rules]);
   if (!parts.some((p) => p.hidden)) {
     return (
-      <Markdown style={ctx.mdStyle} rules={ctx.rules}>
+      <Markdown style={ctx.mdStyle} rules={rules}>
         {text}
       </Markdown>
     );
@@ -750,7 +801,7 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
                       <View style={[s.linkBadge, leftVerdict === true
                         ? { backgroundColor: colors(ctx.rt).ok }
                         : leftVerdict === false ? { backgroundColor: colors(ctx.rt).no } : { backgroundColor: colors(ctx.rt).blue }]}>
-                        <Text style={s.linkBadgeText}>{badge}</Text>
+                        <Text style={[s.linkBadgeText, { color: ctx.rt.bg }]}>{badge}</Text>
                       </View>
                     ) : null}
                     <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>{fixArrows(pairs[li]?.left ?? '')}</Text>
@@ -770,7 +821,7 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
                       <View style={[s.linkBadge, rightVerdict === true
                         ? { backgroundColor: colors(ctx.rt).ok }
                         : rightVerdict === false ? { backgroundColor: colors(ctx.rt).no } : { backgroundColor: colors(ctx.rt).blue }]}>
-                        <Text style={s.linkBadgeText}>{badge}</Text>
+                        <Text style={[s.linkBadgeText, { color: ctx.rt.bg }]}>{badge}</Text>
                       </View>
                     ) : null}
                     <Text style={[s.optText, { color: ctx.rt.text, fontSize: ctx.fontSize }]}>
@@ -800,7 +851,7 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
               ]}
             >
               <View style={s.orderPos}>
-                <Text style={[s.orderPosText, { color: orderSel === pos ? '#FFF' : ctx.rt.text + '80', backgroundColor: orderSel === pos ? colors(ctx.rt).blue : 'transparent' }]}>
+                <Text style={[s.orderPosText, { color: orderSel === pos ? ctx.rt.bg : ctx.rt.text + '80', backgroundColor: orderSel === pos ? colors(ctx.rt).blue : 'transparent' }]}>
                   {pos + 1}
                 </Text>
               </View>
@@ -833,13 +884,13 @@ function QuizBlock({ block, ctx }: { block: Extract<SmdBlock, { type: 'quiz' }>;
       )}
 
       {(block.quizType === 'multi' || block.quizType === 'free' || block.quizType === 'numeric' || block.quizType === 'match' || block.quizType === 'order') && !checked && (
-        <Pressable onPress={() => setChecked(true)} style={[s.checkBtn, { backgroundColor: colors(ctx.rt).blue }]}>
-          <Text style={s.checkBtnText}>Проверить</Text>
+        <Pressable onPress={() => setChecked(true)} style={[s.checkBtn, { borderColor: ctx.rt.rule }]}>
+          <Text style={[s.checkBtnText, { color: ctx.rt.text }]}>Проверить</Text>
         </Pressable>
       )}
       {block.quizType === 'single' && sel.length > 0 && !checked && (
-        <Pressable onPress={() => setChecked(true)} style={[s.checkBtn, { backgroundColor: colors(ctx.rt).blue }]}>
-          <Text style={s.checkBtnText}>Проверить</Text>
+        <Pressable onPress={() => setChecked(true)} style={[s.checkBtn, { borderColor: ctx.rt.rule }]}>
+          <Text style={[s.checkBtnText, { color: ctx.rt.text }]}>Проверить</Text>
         </Pressable>
       )}
 
@@ -890,12 +941,12 @@ const calloutStyle = (rt: any): Record<string, { color: string; icon: any; label
 function CalloutBlock({ kind, body, ctx }: { kind: string; body: string; ctx: Ctx }) {
   const st = calloutStyle(ctx.rt)[kind] ?? { color: colors(ctx.rt).mute, icon: 'information-circle-outline', label: kind };
   return (
-    <View style={[s.callout, { borderColor: st.color, backgroundColor: st.color + '14' }]}>
+    <View style={[s.callout, { borderLeftColor: st.color }]}>
       <View style={s.cardHead}>
         <Ionicons name={st.icon} size={16} color={st.color} />
         <Text style={[s.calloutLabel, { color: st.color }]}>{st.label}</Text>
       </View>
-      <Markdown style={ctx.mdStyle}>{body}</Markdown>
+      <RichText body={body} ctx={ctx} />
     </View>
   );
 }
@@ -940,102 +991,89 @@ function ChecklistBlock({ items, ctx }: { items: string[]; ctx: Ctx }) {
   );
 }
 
-// --- compare-table: горизонтальный скролл ---
+// --- compare-table / :::table: та же нативная таблица, что и GFM в теле ---
 
 function CompareTable({ head, rows, ctx }: { head: string[]; rows: string[][]; ctx: Ctx }) {
-  const cellBorder = ctx.rt.text + '25';
-  // Защита от кривых источников: режем пустые крайние колонки.
-  let cols = head.map((_, j) => j);
-  const colEmpty = (j: number) =>
-    (head[j] ?? '').trim() === '' && rows.every((r) => (r[j] ?? '').trim() === '');
-  while (cols.length > 1 && colEmpty(cols[0])) cols = cols.slice(1);
-  while (cols.length > 1 && colEmpty(cols[cols.length - 1])) cols = cols.slice(0, -1);
+  const table = { head, rows, align: head.map(() => 'left' as const) };
   return (
-    <View style={[s.cmpTable, { borderColor: cellBorder, marginVertical: 8 }]}>
-      <View style={[s.cmpRow, { backgroundColor: ctx.rt.text + '08' }]}>
-        {cols.map((j) => (
-          <Text key={j} style={[s.cmpCell, s.cmpHead, { flex: 1, color: ctx.rt.text, borderColor: cellBorder, fontSize: ctx.fontSize * 0.85 }]}>{head[j]}</Text>
-        ))}
-      </View>
-      {rows.map((r, i) => (
-        <View key={i} style={s.cmpRow}>
-          {cols.map((j) => (
-            <Text key={j} style={[s.cmpCell, { flex: 1, color: ctx.rt.text, borderColor: cellBorder, fontSize: ctx.fontSize * 0.85 }]}>
-              {r[j] ?? ''}
-            </Text>
-          ))}
-        </View>
-      ))}
-    </View>
+    <SmdTable
+      table={table}
+      rt={ctx.rt}
+      fontSize={ctx.fontSize}
+      boldFamily={ctx.fonts.bold}
+      italicFamily={ctx.fonts.italic}
+    />
   );
 }
 
 const s = StyleSheet.create({
-  meta: { borderBottomWidth: 1, paddingBottom: 12, marginBottom: 12 },
-  metaTitle: { fontWeight: '700', marginBottom: 8 },
+  meta: { borderBottomWidth: StyleSheet.hairlineWidth, paddingBottom: 16, marginBottom: 20 },
+  metaTitle: { fontWeight: '700', marginBottom: 10 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chip: { borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
   chipText: { fontSize: 12, fontWeight: '600' },
-  def: { borderLeftWidth: 3, borderRadius: 8, padding: 12, marginVertical: 8 },
-  defTerm: { fontWeight: '700', marginBottom: 4 },
-  formula: {
-    borderWidth: 1, borderRadius: 8, padding: 12, marginVertical: 8,
-  },
-  formulaText: { fontFamily: 'JetBrainsMono', fontSize: 15, lineHeight: 22 },
+
+  block: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 16, marginVertical: 12 },
+  def: { borderLeftWidth: 2, paddingLeft: 16, paddingVertical: 4, marginVertical: 12 },
+  defTerm: { fontWeight: '700', marginBottom: 6 },
+  formula: { paddingVertical: 12, marginVertical: 8, alignItems: 'center' },
   mathBlock: {
     borderWidth: StyleSheet.hairlineWidth, borderRadius: 10,
-    paddingVertical: 10, paddingHorizontal: 12, marginVertical: 8,
+    paddingVertical: 12, paddingHorizontal: 12, marginVertical: 8,
   },
-  reveal: { borderWidth: 1, borderRadius: 10, marginVertical: 8, overflow: 'hidden' },
-  revealHead: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 },
+
+  reveal: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, marginVertical: 12, overflow: 'hidden' },
+  revealHead: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, paddingHorizontal: 16, paddingVertical: 12 },
   revealTitle: { flex: 1, fontWeight: '600' },
   revealHint: { fontSize: 12 },
-  revealBody: { paddingHorizontal: 12, paddingBottom: 12 },
-  card: { borderWidth: 1, borderRadius: 12, padding: 14, marginVertical: 8 },
-  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  cardLabel: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, flex: 1 },
+  revealBody: { paddingHorizontal: 16, paddingBottom: 16 },
+
+  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 16, marginVertical: 12 },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  cardLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.1, flex: 1 },
+  cardMeta: { fontSize: 12, fontWeight: '600' },
   cardMark: { fontSize: 12, fontWeight: '700' },
   cardText: { lineHeight: 24, marginBottom: 4 },
-  cardBtns: { flexDirection: 'row', gap: 10, marginTop: 10 },
-  cardBtn: { flex: 1, borderWidth: 1.5, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  cardBtns: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  cardBtn: { flex: 1, borderWidth: 1, borderRadius: 10, minHeight: 44, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
   cardBtnText: { fontSize: 14, fontWeight: '700' },
-  quiz: { borderWidth: 1, borderRadius: 12, padding: 14, marginVertical: 8 },
-  quizQ: { fontWeight: '600', marginBottom: 10, lineHeight: 24 },
+
+  solutionBody: { marginTop: 12, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, marginTop: 4 },
+  actionText: { fontSize: 14, fontWeight: '600' },
+
+  quiz: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 16, marginVertical: 12 },
+  quizQ: { fontWeight: '600', marginBottom: 12, lineHeight: 24 },
   opt: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 8,
+    borderWidth: StyleSheet.hairlineWidth, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 12, minHeight: 48, marginBottom: 8,
   },
-  optText: { flex: 1, lineHeight: 22 },
-  freeInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8 },
-  checkBtn: { borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 2 },
-  checkBtnText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
-  verdict: { marginTop: 10 },
+  optText: { flex: 1, lineHeight: 21 },
+  freeInput: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, minHeight: 48, marginBottom: 12 },
+  checkBtn: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 4, borderBottomWidth: 1 },
+  checkBtnText: { fontSize: 15, fontWeight: '600' },
+  verdict: { marginTop: 12 },
   verdictText: { fontSize: 15, fontWeight: '700' },
-  explain: { marginTop: 4, lineHeight: 20 },
-  callout: { borderLeftWidth: 4, borderRadius: 8, padding: 12, marginVertical: 8 },
-  calloutLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  checklist: { borderWidth: 1, borderRadius: 12, padding: 14, marginVertical: 8 },
-  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
-  checkText: { flex: 1, lineHeight: 22 },
-  cmpWrap: { marginVertical: 8 },
-  cmpTable: { borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
-  cmpRow: { flexDirection: 'row' },
-  cmpCell: { flex: 1, minWidth: 0, padding: 8, borderRightWidth: 1, borderBottomWidth: 0.5 },
-  cmpHead: { fontWeight: '700' },
+  explain: { marginTop: 6, lineHeight: 19 },
+
+  callout: { borderLeftWidth: 2, paddingLeft: 16, paddingVertical: 4, marginVertical: 12 },
+  calloutLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.1 },
+
+  checklist: { paddingVertical: 4, marginVertical: 12 },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48, paddingVertical: 4 },
+  checkText: { flex: 1, lineHeight: 21 },
+
   clozeText: { lineHeight: 24 },
   matchWrap: { gap: 8, marginTop: 4 },
   matchRow: { flexDirection: 'row', alignItems: 'stretch', gap: 8 },
-  matchCell: { flex: 1, borderWidth: 1, borderRadius: 10, padding: 10 },
+  matchCell: { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, padding: 12, justifyContent: 'center', minHeight: 48 },
   linkBadge: { minWidth: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  linkBadgeText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
+  linkBadgeText: { fontSize: 13, fontWeight: '700' },
   orderNum: { fontSize: 14, fontWeight: '700', minWidth: 24 },
   orderPos: { minWidth: 28, alignItems: 'center', justifyContent: 'center' },
   orderPosText: { fontSize: 14, fontWeight: '700', minWidth: 26, height: 26, lineHeight: 26, textAlign: 'center', borderRadius: 13, overflow: 'hidden' },
-  miniBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6 },
-  askBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, paddingVertical: 8 },
-  askBtnText: { fontSize: 14, fontWeight: '600' },
-  chatMsg: { maxWidth: '88%', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, marginBottom: 6 },
-  sendBtn: { padding: 8 },
+  miniBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, minHeight: 44 },
   orderBtn: { padding: 6 },
 });
 
