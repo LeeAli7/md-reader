@@ -664,10 +664,9 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const openMenuAt = (e: any) => {
     const { pageX, pageY } = e.nativeEvent ?? {};
     const { width: SW } = Dimensions.get('window');
-    setMenuAt({
-      x: (typeof pageX === 'number' ? pageX : SW) - 256,
-      y: (typeof pageY === 'number' ? pageY : 0) + 8,
-    });
+    const PW = 256;
+    const x = Math.min(Math.max(8, (typeof pageX === 'number' ? pageX : SW) - PW), SW - PW - 8);
+    setMenuAt({ x, y: (typeof pageY === 'number' ? pageY : 0) + 8 });
     setShowMenu(true);
   };
 
@@ -928,7 +927,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
       {/* Док: содержание · чтение · документы. Вместо плавающих пузырей,
           которые закрывали текст и требовали перетаскивания. */}
       {showUI && (
-        <View style={[s.dockWrap, { bottom: insets.bottom + 14 }]} pointerEvents="box-none">
+        <View style={[s.dockWrap, { bottom: insets.bottom + 10 }]} pointerEvents="box-none">
           <View style={[s.dock, { backgroundColor: theme.isDark ? 'rgba(28,28,30,0.92)' : 'rgba(255,255,255,0.94)', borderColor: rt.dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
             <Pressable
               disabled={tocHeadings.length === 0}
@@ -1202,17 +1201,18 @@ function styles(insets: any) {
     container: { flex: 1 },
     // Шапка без нижней границы: воздух вместо линии, как в iOS Books.
     topBar: {
-      flexDirection: 'row', alignItems: 'center', gap: 2,
-      paddingTop: insets.top + 6, paddingHorizontal: 6, paddingBottom: 6,
+      flexDirection: 'row', alignItems: 'center',
+      minHeight: 52,
+      paddingTop: insets.top + 2, paddingHorizontal: 10, paddingBottom: 4,
     },
-    backBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-    titleCol: { flex: 1, paddingHorizontal: 2 },
+    backBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginLeft: -6 },
+    titleCol: { flex: 1, minWidth: 0, paddingHorizontal: 4, paddingRight: 6 },
     title: { ...tp.headline },
     meta: { ...tp.caption, marginTop: 1 },
     aa: { ...tp.subheadStrong, letterSpacing: 0.2 },
     iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
     scroll: { flex: 1 },
-    content: { paddingHorizontal: 22, paddingTop: 8, paddingBottom: 120 },
+    content: { paddingHorizontal: 22, paddingTop: 10, paddingBottom: 136 },
     pane: { flex: 1 },
     splitBar: {
       flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10,
@@ -1231,13 +1231,13 @@ function styles(insets: any) {
     dockWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
     dock: {
       flexDirection: 'row', alignItems: 'center', gap: 4,
-      paddingHorizontal: 8, paddingVertical: 6, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth,
+      paddingHorizontal: 6, paddingVertical: 4, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth,
       shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8,
     },
-    dockBtn: { width: 52, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 999 },
+    dockBtn: { width: 56, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 999 },
     dockAa: { ...tp.subheadStrong, letterSpacing: 0.3 },
     dockBadge: {
-      position: 'absolute', top: 4, right: 8, minWidth: 15, height: 15, borderRadius: 8,
+      position: 'absolute', top: 7, right: 12, minWidth: 15, height: 15, borderRadius: 8,
       alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
     },
     dockBadgeText: { fontSize: 9, fontFamily: uiFontOf(600) },

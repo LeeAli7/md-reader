@@ -133,10 +133,6 @@ export default function TaskChatScreen({ navigation, route }: any) {
     code_inline: { fontFamily: 'JetBrainsMono', backgroundColor: theme.fill, color: theme.text, paddingHorizontal: 4, borderRadius: 4 },
     code_block: { fontFamily: 'JetBrainsMono', backgroundColor: theme.fill, color: theme.text, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.divider, borderRadius: 10, padding: 10, marginVertical: 4 },
     fence: { fontFamily: 'JetBrainsMono', backgroundColor: theme.fill, color: theme.text, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.divider, borderRadius: 10, padding: 10, marginVertical: 4 },
-    table: { borderWidth: StyleSheet.hairlineWidth, borderColor: theme.divider, borderRadius: 8 },
-    th: { padding: 6, fontFamily: rs.boldFamily, color: theme.text },
-    td: { padding: 6, color: theme.text },
-    tr: { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: theme.divider },
     link: { color: theme.accent },
     blockquote: { backgroundColor: theme.fill, borderLeftWidth: 2, borderLeftColor: theme.divider, paddingHorizontal: 10, paddingVertical: 6, marginVertical: 6, borderRadius: 6 },
   };
@@ -406,29 +402,27 @@ export default function TaskChatScreen({ navigation, route }: any) {
                       ))}
                     </View>
                   ) : null}
-                  <Pressable
-                    onLongPress={() => copy(m.text)}
-                    delayLongPress={320}
-                    style={[s.mine, { backgroundColor: theme.fill }]}
-                  >
-                    <Text style={[s.mineText, { color: theme.text, fontSize: fontSize * 0.94 }]}>
+                  <View style={[s.mine, { backgroundColor: theme.fill }]}>
+                    <Text selectable style={[s.mineText, { color: theme.text, fontSize: fontSize * 0.94 }]}>
                       {softenLongWords(m.text)}
                     </Text>
-                  </Pressable>
+                  </View>
                 </View>
               );
             }
             return (
               <View key={i} style={s.theirs}>
                 <Text style={[s.who, { color: theme.textTertiary, fontFamily: uiFontOf(600) }]}>ПОМОЩНИК</Text>
-                <Pressable onLongPress={() => copy(m.text)} delayLongPress={320}>
-                  <RichAnswer
-                    body={softenLongWords(m.text)}
-                    mdStyle={mdStyle}
-                    rt={rtChat}
-                    fontSize={fontSize * 0.97}
-                    fonts={mathFonts}
-                  />
+                <RichAnswer
+                  body={softenLongWords(m.text)}
+                  mdStyle={mdStyle}
+                  rt={rtChat}
+                  fontSize={fontSize * 0.97}
+                  fonts={mathFonts}
+                />
+                <Pressable onPress={() => copy(m.text)} hitSlop={6} style={s.msgAct}>
+                  <Ionicons name="copy-outline" size={14} color={theme.textTertiary} />
+                  <Text style={[s.msgActText, { color: theme.textTertiary }]}>Копировать</Text>
                 </Pressable>
               </View>
             );
@@ -536,15 +530,23 @@ export default function TaskChatScreen({ navigation, route }: any) {
           <View style={[s.grabber, { backgroundColor: theme.textTertiary }]} />
           <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false}>
             <Text style={[s.ctxLabel, { color: theme.textSecondary, fontFamily: uiFontOf(600) }]}>УСЛОВИЕ</Text>
-            <Text style={[s.ctxText, { color: theme.text, fontFamily: rs.fontFamily, fontSize: fontSize * 0.95 }]}>
-              {task || '—'}
-            </Text>
+            <RichAnswer
+              body={task || '—'}
+              mdStyle={mdStyle}
+              rt={rtChat}
+              fontSize={fontSize * 0.95}
+              fonts={mathFonts}
+            />
             {solution.trim() ? (
               <>
                 <Text style={[s.ctxLabel, { color: theme.textSecondary, marginTop: 18, fontFamily: uiFontOf(600) }]}>РАЗБОР</Text>
-                <Text style={[s.ctxText, { color: theme.textSecondary, fontFamily: rs.fontFamily, fontSize: fontSize * 0.92 }]}>
-                  {solution}
-                </Text>
+                <RichAnswer
+                  body={solution}
+                  mdStyle={mdStyle}
+                  rt={rtChat}
+                  fontSize={fontSize * 0.93}
+                  fonts={mathFonts}
+                />
               </>
             ) : null}
           </ScrollView>
@@ -560,15 +562,15 @@ export default function TaskChatScreen({ navigation, route }: any) {
 const s = StyleSheet.create({
   container: { flex: 1 },
   head: {
-    flexDirection: 'row', alignItems: 'center', gap: 2,
-    paddingHorizontal: 4, paddingVertical: 2, minHeight: 44,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 10, paddingTop: 2, paddingBottom: 4, minHeight: 52,
   },
-  headBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   title: { ...tp.headline, fontFamily: uiFontOf(600) },
   subRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
   sub: { fontSize: 11.5 },
 
-  list: { paddingHorizontal: 18, paddingTop: 10, paddingBottom: 16 },
+  list: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 },
 
   empty: { paddingTop: 56, paddingHorizontal: 8, alignItems: 'center' },
   emptyTitle: { fontSize: 21, letterSpacing: -0.2 },
@@ -582,6 +584,8 @@ const s = StyleSheet.create({
 
   theirs: { marginTop: 22 },
   who: { fontSize: 9.5, letterSpacing: 1.1, marginBottom: 7 },
+  msgAct: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', minHeight: 44, marginTop: 2 },
+  msgActText: { fontSize: 12 },
 
   busyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 20, paddingLeft: 2 },
   busyText: { fontSize: 12.5, flex: 1 },
