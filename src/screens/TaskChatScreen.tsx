@@ -74,6 +74,12 @@ function Typing({ color }: { color: string }) {
   );
 }
 
+/** История без последнего вопроса: он уже приходит в job.full, дублировать нельзя. */
+async function historyBeforeLastUser(chatId: string): Promise<ChatMsg[]> {
+  const h = await loadChat(chatId);
+  return h.length > 0 && h[h.length - 1].role === 'user' ? h.slice(0, -1) : h;
+}
+
 export default function TaskChatScreen({ navigation, route }: any) {
   const { theme, isDark } = useTheme();
   const rs = useReadingStyle();
@@ -179,8 +185,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
     }
     resumedRef.current = true;
     lastJobRef.current = job;
-    const history = (await loadChat(chatId)).filter((m) => m.role !== 'assistant' || true);
-    runAskTask(chatId, task, solution, history, job).catch(() => {});
+    runAskTask(chatId, task, solution, await historyBeforeLastUser(chatId), job).catch(() => {});
   }, [chatId, task, solution]);
 
   useEffect(() => {
@@ -283,8 +288,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
     await appendChat(chatId, userMsg);
     setBusy(true);
     setElapsed(0);
-    const history = (await loadChat(chatId)).slice(0, -1);
-    runAskTask(chatId, task, solution, history, job).catch(() => {});
+    runAskTask(chatId, task, solution, await historyBeforeLastUser(chatId), job).catch(() => {});
   };
 
   const send = async () => {
@@ -307,7 +311,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
     if (!job) return;
     setErr(null);
     setBusy(true);
-    runAskTask(chatId, task, solution, await loadChat(chatId), job).catch(() => {});
+    runAskTask(chatId, task, solution, await historyBeforeLastUser(chatId), job).catch(() => {});
   };
 
   const stop = () => {
@@ -324,6 +328,8 @@ export default function TaskChatScreen({ navigation, route }: any) {
         text: 'Очистить',
         style: 'destructive',
         onPress: async () => {
+          abortAi(chatId);
+          setBusy(false);
           setMsgs([]);
           await saveChat(chatId, []);
           await setPending(chatId, null);
