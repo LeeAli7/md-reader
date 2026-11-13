@@ -1038,3 +1038,22 @@ const s = StyleSheet.create({
   sendBtn: { padding: 8 },
   orderBtn: { padding: 6 },
 });
+
+// Текст ответа помощника в чате — тем же движком, что и тело .smd:
+// дроби/корни/степени нативные, markdown, списки. Без облачка и границ.
+export function RichAnswer({
+  body,
+  mdStyle,
+  rt,
+  fontSize,
+  fonts,
+}: {
+  body: string;
+  mdStyle: any;
+  rt: any;
+  fontSize: number;
+  fonts: MathFontsLike;
+}) {
+  const ctx: Ctx = { mdStyle, rt, fontSize, fonts };
+  return <RichText body={body} ctx={ctx} />;
+}

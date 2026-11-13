@@ -14,6 +14,7 @@ export default function AiScreen({ navigation }: any) {
   const [status, setStatus] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [showKey, setShowKey] = useState(false);
 
   useEffect(() => {
     getAiConfig().then((c) => {
@@ -50,7 +51,10 @@ export default function AiScreen({ navigation }: any) {
         Модель отвечает на вопросы под задачами в .smd. Ключ хранится только на телефоне.
       </Text>
 
-      <Group title="Подключение" footer="Совместимо с любым OpenAI-подобным API: адрес, ключ, имя модели.">
+      <Group
+        title="Подключение"
+        footer="Подойдёт любой OpenAI-совместимый сервис: свой ключ, адрес API и имя модели. Адрес — база, без /chat/completions: например https://api.openai.com/v1 или https://api.deepseek.com/v1."
+      >
         <Text style={[st.fieldLabel, { color: theme.textSecondary }]}>Сервер</Text>
         <TextInput
           style={[st.input, { color: theme.text, backgroundColor: theme.bg, borderColor: theme.divider }]}
@@ -62,16 +66,22 @@ export default function AiScreen({ navigation }: any) {
           placeholderTextColor={theme.textSecondary}
         />
         <Text style={[st.fieldLabel, { color: theme.textSecondary }]}>API-ключ</Text>
-        <TextInput
-          style={[st.input, { color: theme.text, backgroundColor: theme.bg, borderColor: theme.divider }]}
-          value={key}
-          onChangeText={setKey}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-          placeholder="Вставь ключ"
-          placeholderTextColor={theme.textSecondary}
-        />
+        <View style={[st.keyRow, { borderColor: theme.divider, backgroundColor: theme.bg }]}>
+          <TextInput
+            style={[st.keyInput, { color: theme.text }]}
+            value={key}
+            onChangeText={setKey}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry={!showKey}
+            placeholder="Вставь ключ"
+            placeholderTextColor={theme.textSecondary}
+          />
+          <Pressable onPress={() => setShowKey((v) => !v)} hitSlop={10} style={st.eye}>
+            <Ionicons name={showKey ? 'eye-off-outline' : 'eye-outline'} size={18} color={theme.textSecondary} />
+          </Pressable>
+        </View>
+        <Text style={[st.hint, { color: theme.textTertiary }]}>Ключ остаётся на телефоне и уходит только на указанный сервер.</Text>
         <Text style={[st.fieldLabel, { color: theme.textSecondary }]}>Модель</Text>
         <TextInput
           style={[st.input, { color: theme.text, backgroundColor: theme.bg, borderColor: theme.divider, marginBottom: 14 }]}
@@ -96,7 +106,9 @@ export default function AiScreen({ navigation }: any) {
         </Pressable>
       </View>
 
-      {status ? <Text style={[st.status, { color: theme.textSecondary }]}>{status}</Text> : null}
+      {status ? (
+        <Text style={[st.status, { color: theme.textSecondary }]} selectable>{status}</Text>
+      ) : null}
     </SettingsScaffold>
   );
 }
@@ -110,5 +122,9 @@ const st = StyleSheet.create({
   primaryText: { ...tp.callout, fontFamily: uiFontOf(600) },
   secondary: { flex: 1, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
   secondaryText: { ...tp.callout, fontFamily: uiFontOf(500) },
-  status: { ...tp.footnote, marginTop: 14 },
+  status: { ...tp.footnote, marginTop: 14, lineHeight: 19 },
+  keyRow: { flexDirection: 'row', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, paddingLeft: 12 },
+  keyInput: { flex: 1, fontSize: 15, paddingVertical: 11 },
+  eye: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  hint: { ...tp.caption, marginTop: 6, lineHeight: 16 },
 });
