@@ -193,6 +193,19 @@ function attrStr(a: Attrs, key: string): string | undefined {
   return typeof v === 'string' ? v : undefined;
 }
 
+/** Диапазон вида "-6..6", "-6:6", "0..2*pi" (pi=3.14159) → [min,max]. */
+function parseRange(raw: string | undefined, dMin: number, dMax: number): [number, number] {
+  const s = (raw ?? '').trim().toLowerCase().replace(/\s+/g, '');
+  if (!s) return [dMin, dMax];
+  const norm = (t: string) => Number(t.replace(/pi/g, String(Math.PI)).replace(/π/g, String(Math.PI)));
+  const m = /^([^.:]+)(?:\.\.|:)([^.:]+)$/.exec(s);
+  if (!m) return [dMin, dMax];
+  const a = norm(m[1]);
+  const b = norm(m[2]);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) return [dMin, dMax];
+  return a < b ? [a, b] : [b, a];
+}
+
 // --- fences ---
 
 const OPEN_RE = /^:::(\w[\w-]*)\s*(.*)$/;
@@ -440,7 +453,38 @@ function fenceToBlocks(f: Fence, warn: (msg: string, col?: number) => void): Smd
         warn(`:::figure без src и без <svg> в теле (строка ${f.line})`);
         return [{ type: 'theory', body }];
       }
-      return [{ type: 'theory', body: `![${alt}](${src})${caption ? `\n*${caption}*` : ''}` }];
+      return [{ type: 'figure', src, alt, ...(caption ? { caption } : {}) }];
+    }
+    case 'video': {
+      const src = attrStr(a, 'src') ?? '';
+      if (!src) {
+        warn(`:::video без src (строка ${f.line}) — пропущен`);
+        return [{ type: 'theory', body: '' }];
+      }
+      const poster = attrStr(a, 'poster') ?? '';
+      const caption = attrStr(a, 'caption') ?? '';
+      return [{ type: 'video', src, ...(poster ? { poster } : {}), ...(caption ? { caption } : {}) }];
+    }
+    case 'plot': {
+      const exprs = body
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((l) => l.replace(/^[yfF]\s*(?:\(\s*x\s*\))?\s*=\s*/, ''))
+        .filter((l) => l !== '');
+      if (exprs.length === 0) {
+        warn(`:::plot без функций в теле (строка ${f.line}) — блок как theory`);
+        return [{ type: 'theory', body }];
+      }
+      const [xmin, xmax] = parseRange(attrStr(a, 'x'), -6, 6);
+      const [ymin, ymax] = parseRange(attrStr(a, 'y'), NaN, NaN);
+      const title = attrStr(a, 'title') ?? '';
+      return [{
+        type: 'plot', exprs, xmin, xmax,
+        ...(Number.isFinite(ymin) ? { ymin } : {}),
+        ...(Number.isFinite(ymax) ? { ymax } : {}),
+        ...(title ? { title } : {}),
+      }];
     }
     case 'svg': {
       if (!/<svg[\s>]/i.test(body)) {

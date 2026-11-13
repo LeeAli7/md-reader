@@ -14,6 +14,9 @@ import type { SmdBlock, SmdDoc } from './smdTypes';
 import { chatIdFor } from './ai';
 import { MathView } from './MathView';
 import { SmdFigure } from './SmdFigure';
+import { SmdImage } from './SmdImage';
+import { SmdVideo } from './SmdVideo';
+import { SmdPlot } from './SmdPlot';
 import { repairText } from './textFix';
 
 interface Ctx {
@@ -22,6 +25,7 @@ interface Ctx {
   fontSize: number;
   fonts: MathFontsLike;
   rules?: any;
+  docKey?: string;
 }
 
 export interface MathFontsLike {
@@ -52,7 +56,7 @@ export function colors(rt: any) {
 }
 
 export function SmdDocView({ doc, mdStyle, rt, fontSize, fonts, rules, onBlockLayout, docKey, onAskTask }: { doc: SmdDoc; mdStyle: any; rt: any; fontSize: number; fonts: MathFontsLike; rules?: any; onBlockLayout?: (index: number, y: number) => void; docKey?: string; onAskTask?: (t: { chatId: string; title: string; task: string; solution: string }) => void }) {
-  const ctx: Ctx = { mdStyle, rt, fontSize, fonts, rules };
+  const ctx: Ctx = { mdStyle, rt, fontSize, fonts, rules, docKey };
   return (
     <View>
       <SmdMetaHeader doc={doc} rt={rt} fontSize={fontSize} />
@@ -233,6 +237,19 @@ function BlockView({ block, ctx, blocks, index, docKey, onAskTask }: {
         </View>
       );
     case 'figure':
+      if (block.src) {
+        return (
+          <SmdImage
+            src={block.src}
+            alt={block.alt}
+            caption={block.caption}
+            docKey={ctx.docKey}
+            color={ctx.rt.text}
+            muted={ctx.rt.muted ?? ctx.rt.text + '80'}
+          />
+        );
+      }
+      if (!block.svg) return null;
       return (
         <SmdFigure
           svg={block.svg}
@@ -240,6 +257,31 @@ function BlockView({ block, ctx, blocks, index, docKey, onAskTask }: {
           color={ctx.rt.text}
           muted={ctx.rt.muted ?? ctx.rt.text + '80'}
           fonts={{ regular: ctx.fonts.regular, bold: ctx.fonts.bold }}
+        />
+      );
+    case 'video':
+      return (
+        <SmdVideo
+          src={block.src}
+          poster={block.poster}
+          caption={block.caption}
+          docKey={ctx.docKey}
+          color={ctx.rt.text}
+          muted={ctx.rt.muted ?? ctx.rt.text + '80'}
+        />
+      );
+    case 'plot':
+      return (
+        <SmdPlot
+          exprs={block.exprs}
+          xmin={block.xmin}
+          xmax={block.xmax}
+          ymin={block.ymin}
+          ymax={block.ymax}
+          title={block.title}
+          color={ctx.rt.text}
+          muted={ctx.rt.muted ?? ctx.rt.text + '80'}
+          dark={!!ctx.rt.dark}
         />
       );
     case 'task':
@@ -442,7 +484,7 @@ const TEXT_LIKE = (c: any) =>
  * выделяются вместе с ним. Абзац с картинкой (View внутри) оставляем View —
  * Android не умеет вкладывать View в Text.
  */
-export function selectableRules(style: any, extra?: any) {
+export function selectableRules(style: any, extra?: any, media?: { docKey?: string; color: string; muted: string }) {
   const wrap = (key: string) => (node: any, children: any[]) =>
     children.every(TEXT_LIKE) ? (
       <Text key={node.key} selectable style={style?.[key]}>
@@ -461,6 +503,17 @@ export function selectableRules(style: any, extra?: any) {
     heading4: wrap('heading4'),
     heading5: wrap('heading5'),
     heading6: wrap('heading6'),
+    // ![](img/x.png) в теле — тот же просмотрщик, что у :::figure
+    image: (node: any) => (
+      <SmdImage
+        key={node.key}
+        src={node.attributes?.src ?? ''}
+        alt={node.attributes?.alt}
+        docKey={media?.docKey}
+        color={media?.color ?? '#000000'}
+        muted={media?.muted ?? '#8E8E93'}
+      />
+    ),
     ...(extra ?? {}),
   };
 }
@@ -489,7 +542,10 @@ export function SegmentedMarkdown({ text, mdStyle, rules, rt, fontSize, boldFami
 
 function InlineRich({ text, ctx }: { text: string; ctx: Ctx }) {
   const parts = splitCloze(text);
-  const rules = useMemo(() => selectableRules(ctx.mdStyle, ctx.rules), [ctx.mdStyle, ctx.rules]);
+  const rules = useMemo(
+    () => selectableRules(ctx.mdStyle, ctx.rules, { docKey: ctx.docKey, color: ctx.rt.text, muted: ctx.rt.muted ?? ctx.rt.text + '80' }),
+    [ctx.mdStyle, ctx.rules, ctx.docKey, ctx.rt],
+  );
   if (!parts.some((p) => p.hidden)) {
     return (
       <Markdown style={ctx.mdStyle} rules={rules}>
