@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View, Text, Pressable, StyleSheet, Animated, Image, ScrollView,
-  Modal, FlatList, NativeSyntheticEvent, NativeScrollEvent, Dimensions,
+  Modal, FlatList, NativeSyntheticEvent, NativeScrollEvent, Dimensions, Platform,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import * as NavigationBar from 'expo-navigation-bar';
 import { WebView } from 'react-native-webview';
 import { exportFile } from '../utils/importExport';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -417,6 +418,31 @@ export default function ReaderScreen({ route, navigation }: Props) {
   // Тема листа — объект по id, тёмность берём из флага, а не из сравнения hex.
   const rt = getReadingTheme(readingTheme);
   const isDarkReading = rt.dark;
+
+  // Нижняя системная полоса — часть листа, а не интерфейса. App.tsx красит её
+  // по теме UI (в тёмной — чёрная), но лист чтения бывает сепией/белым: внутри
+  // файла это и читалось как «чёрная полоса» под текстом. Пока читалка на
+  // экране — цвет навбара берём у листа; на blur (редактор, чат) и на unmount
+  // возвращаем тему интерфейса, иначе полоса останется чужой в меню.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const applyReader = () => {
+      NavigationBar.setBackgroundColorAsync(rt.bg).catch(() => {});
+      NavigationBar.setButtonStyleAsync(rt.dark ? 'light' : 'dark').catch(() => {});
+    };
+    const restoreApp = () => {
+      NavigationBar.setBackgroundColorAsync(theme.bg).catch(() => {});
+      NavigationBar.setButtonStyleAsync(theme.isDark ? 'light' : 'dark').catch(() => {});
+    };
+    applyReader();
+    const unsubFocus = navigation.addListener('focus', applyReader);
+    const unsubBlur = navigation.addListener('blur', restoreApp);
+    return () => {
+      unsubFocus();
+      unsubBlur();
+      restoreApp();
+    };
+  }, [rt.bg, rt.dark, theme.bg, theme.isDark, navigation]);
 
   const loadRecent = useCallback(async () => {
     try { setRecent(await getRecent()); } catch {}
