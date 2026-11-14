@@ -145,7 +145,7 @@
       }
     ],
     "package": "com.helloworld",
-    "versionCode": 6
+    "versionCode": 7
   },
   "name": "Supreader",
   "slug": "supreader",
@@ -153,5 +153,5 @@
     "bundleIdentifier": "com.supreader.app"
   },
   "userInterfaceStyle": "automatic",
-  "version": "1.4.1"
+  "version": "1.4.2"
 }

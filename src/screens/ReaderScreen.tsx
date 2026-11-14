@@ -930,7 +930,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
               <Ionicons name="ellipsis-horizontal" size={22} color={rt.text} />
             </Pressable>
           </View>
-          <ReadingProgressBar progress={progress} color={isDarkReading ? '#FFFFFF' : theme.accent} />
+          <ReadingProgressBar progress={progress} color={rt.link} />
         </>
       )}
 
