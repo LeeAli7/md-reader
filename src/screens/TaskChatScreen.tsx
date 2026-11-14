@@ -11,7 +11,7 @@ import {
   ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
@@ -223,22 +223,33 @@ export default function TaskChatScreen({ navigation, route }: any) {
         return;
       }
       const res = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsMultipleSelection: true,
-        quality: 0.6,
+        selectionLimit: 4,
+        quality: 0.5,
         base64: true,
       });
       if (res.canceled || !res.assets?.length) return;
       const next: Attach[] = [];
+      const dir = (FileSystem.documentDirectory ?? '') + 'chat-media/';
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
       for (const a of res.assets) {
         if (!a.base64) continue;
         if (a.base64.length > 4 * 1024 * 1024) {
           Alert.alert('Слишком большая картинка', `${a.fileName ?? 'фото'} — больше 3 МБ, пропустил.`);
           continue;
         }
+        // Копируем в documentDirectory: кэш пикера Android чистит, и в истории
+        // оставались битые картинки.
+        let uri = a.uri;
+        try {
+          const path = `${dir}${Date.now()}-${next.length}.jpg`;
+          await FileSystem.writeAsStringAsync(path, a.base64, { encoding: FileSystem.EncodingType.Base64 });
+          uri = path;
+        } catch {}
         next.push({
           name: a.fileName ?? `фото-${next.length + 1}.jpg`,
-          uri: a.uri,
+          uri,
           image: { mime: a.mimeType ?? 'image/jpeg', base64: a.base64 },
         });
       }
@@ -264,8 +275,25 @@ export default function TaskChatScreen({ navigation, route }: any) {
         if (mime.startsWith('image/')) {
           const b64 = await FileSystem.readAsStringAsync(a.uri, { encoding: FileSystem.EncodingType.Base64 });
           if (b64.length <= 4 * 1024 * 1024) {
-            next.push({ name, uri: a.uri, image: { mime: mime || 'image/jpeg', base64: b64 } });
+            let uri = a.uri;
+            try {
+              const dir = (FileSystem.documentDirectory ?? '') + 'chat-media/';
+              await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
+              const path = `${dir}${Date.now()}-${next.length}.jpg`;
+              await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
+              uri = path;
+            } catch {}
+            next.push({ name, uri, image: { mime: mime || 'image/jpeg', base64: b64 } });
+          } else {
+            Alert.alert('Слишком большая картинка', `${name} — больше 3 МБ, пропустил.`);
           }
+          continue;
+        }
+        // Текст читаем только если это правда текст; бинарник в UTF-8 — мусор.
+        const isText = mime.startsWith('text/') || mime === 'application/json' ||
+          /\.(txt|md|smd|csv|json|log|tex)$/i.test(name);
+        if (!isText) {
+          Alert.alert('Пока только текст и фото', `${name}: ${mime || 'неизвестный тип'} не поддерживается.`);
           continue;
         }
         const text = await FileSystem.readAsStringAsync(a.uri, { encoding: FileSystem.EncodingType.UTF8 });
@@ -300,6 +328,60 @@ export default function TaskChatScreen({ navigation, route }: any) {
     setQ('');
     setAtt([]);
     await dispatch(job, userMsg);
+  };
+
+  const editMessage = async (i: number) => {
+    const m = msgs[i];
+    if (!m || m.role !== 'user') return;
+    const next = msgs.slice(0, i);
+    abortAi(chatId);
+    setBusy(false);
+    setErr(null);
+    await setPending(chatId, null);
+    setMsgs(next);
+    await saveChat(chatId, next);
+    setQ(m.text.replace(/\u200B/g, ''));
+    setAtt([]);
+  };
+
+  const deleteMessage = async (i: number) => {
+    const next = msgs.filter((_, k) => k !== i);
+    setMsgs(next);
+    await saveChat(chatId, next);
+  };
+
+  const msgActions = (i: number) => {
+    const m = msgs[i];
+    if (!m) return;
+    const isLastUser = msgs.map((x) => x.role).lastIndexOf('user') === i;
+    const buttons: any[] = [{ text: 'Копировать', onPress: () => copy(m.text) }];
+    if (isLastUser) buttons.push({ text: 'Изменить', onPress: () => editMessage(i) });
+    buttons.push({ text: 'Удалить', style: 'destructive', onPress: () => deleteMessage(i) });
+    buttons.push({ text: 'Отмена', style: 'cancel' });
+    Alert.alert('Сообщение', undefined, buttons);
+  };
+
+  // Перегенерировать последний ответ: выкидываем его и повторяем тот же вопрос.
+  const regenerate = async () => {
+    if (busy) return;
+    const lastA = msgs.map((m) => m.role).lastIndexOf('assistant');
+    if (lastA < 0) return;
+    const lastU = msgs.slice(0, lastA).map((m) => m.role).lastIndexOf('user');
+    if (lastU < 0) return;
+    const next = msgs.slice(0, lastA);
+    setMsgs(next);
+    await saveChat(chatId, next);
+    const job: PendingJob = lastJobRef.current ?? {
+      question: msgs[lastU].text,
+      full: msgs[lastU].text,
+      shown: msgs[lastU].text,
+      images: [],
+      ts: Date.now(),
+    };
+    lastJobRef.current = job;
+    setErr(null);
+    setBusy(true);
+    runAskTask(chatId, task, solution, await historyBeforeLastUser(chatId), job).catch(() => {});
   };
 
   const retry = async () => {
@@ -351,8 +433,8 @@ export default function TaskChatScreen({ navigation, route }: any) {
             </Pressable>
           ) : null}
         </View>
-        <Pressable onPress={confirmClear} hitSlop={12} style={s.headBtn}>
-          <MaterialCommunityIcons name="broom" size={21} color={theme.textSecondary} />
+        <Pressable onPress={() => setMenu(true)} hitSlop={12} style={s.headBtn}>
+          <Ionicons name="ellipsis-horizontal" size={22} color={theme.text} />
         </Pressable>
       </View>
 
@@ -364,7 +446,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
         <ScrollView
           ref={(r) => { scrollRef.current = r; }}
           style={{ flex: 1 }}
-          contentContainerStyle={s.list}
+          contentContainerStyle={msgs.length === 0 && !busy ? [s.list, s.listEmpty] : s.list}
           keyboardShouldPersistTaps="handled"
           scrollEventThrottle={16}
           onScroll={(e) => {
@@ -396,23 +478,27 @@ export default function TaskChatScreen({ navigation, route }: any) {
               return (
                 <View key={i} style={s.mineRow}>
                   {m.images && m.images.length > 0 ? (
-                    <View style={{ gap: 6, marginBottom: 6, alignItems: 'flex-end' }}>
+                    <View style={{ gap: 6, marginBottom: 8, alignItems: 'flex-end' }}>
                       {m.images.map((uri, k) => (
                         <Image key={k} source={{ uri }} style={s.msgImage} resizeMode="cover" />
                       ))}
                     </View>
                   ) : null}
-                  <View style={[s.mine, { backgroundColor: theme.fill }]}>
+                  <Pressable
+                    onLongPress={() => msgActions(i)}
+                    delayLongPress={260}
+                    style={[s.mine, { backgroundColor: theme.fill }]}
+                  >
                     <Text selectable style={[s.mineText, { color: theme.text, fontSize: fontSize * 0.94 }]}>
                       {softenLongWords(m.text)}
                     </Text>
-                  </View>
+                  </Pressable>
                 </View>
               );
             }
+            const isLastAnswer = i === msgs.map((x) => x.role).lastIndexOf('assistant');
             return (
               <View key={i} style={s.theirs}>
-                <Text style={[s.who, { color: theme.textTertiary, fontFamily: uiFontOf(600) }]}>ПОМОЩНИК</Text>
                 <RichAnswer
                   body={softenLongWords(m.text)}
                   mdStyle={mdStyle}
@@ -420,10 +506,18 @@ export default function TaskChatScreen({ navigation, route }: any) {
                   fontSize={fontSize * 0.97}
                   fonts={mathFonts}
                 />
-                <Pressable onPress={() => copy(m.text)} hitSlop={6} style={s.msgAct}>
-                  <Ionicons name="copy-outline" size={14} color={theme.textTertiary} />
-                  <Text style={[s.msgActText, { color: theme.textTertiary }]}>Копировать</Text>
-                </Pressable>
+                <View style={s.msgActs}>
+                  <Pressable onPress={() => copy(m.text)} hitSlop={10} style={s.msgAct}>
+                    <Ionicons name="copy-outline" size={15} color={theme.textTertiary} />
+                    <Text style={[s.msgActText, { color: theme.textTertiary }]}>Копировать</Text>
+                  </Pressable>
+                  {isLastAnswer ? (
+                    <Pressable onPress={regenerate} hitSlop={10} style={s.msgAct}>
+                      <Ionicons name="refresh-outline" size={15} color={theme.textTertiary} />
+                      <Text style={[s.msgActText, { color: theme.textTertiary }]}>Ещё раз</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               </View>
             );
           })}
@@ -454,21 +548,32 @@ export default function TaskChatScreen({ navigation, route }: any) {
         </ScrollView>
 
         {att.length > 0 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tray}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.tray}
+            style={s.trayWrap}
+          >
             {att.map((a, i) => (
-              <Pressable
-                key={i}
-                onPress={() => setAtt((p) => p.filter((_, k) => k !== i))}
-                style={[s.chip, { borderColor: theme.divider, backgroundColor: theme.bg }]}
-              >
+              <View key={i} style={s.attTile}>
                 {a.uri ? (
-                  <Image source={{ uri: a.uri }} style={s.chipThumb} />
+                  <Image source={{ uri: a.uri }} style={s.attImg} resizeMode="cover" />
                 ) : (
-                  <Ionicons name="document-text-outline" size={15} color={theme.textSecondary} />
+                  <View style={[s.attFile, { backgroundColor: theme.fill }]}>
+                    <Ionicons name="document-text-outline" size={18} color={theme.textSecondary} />
+                    <Text style={[s.attName, { color: theme.textSecondary }]} numberOfLines={2}>
+                      {a.name}
+                    </Text>
+                  </View>
                 )}
-                <Text style={{ color: theme.text, fontSize: 12, maxWidth: 130 }} numberOfLines={1}>{a.name}</Text>
-                <Ionicons name="close-circle" size={16} color={theme.textTertiary} />
-              </Pressable>
+                <Pressable
+                  onPress={() => setAtt((p) => p.filter((_, k) => k !== i))}
+                  hitSlop={10}
+                  style={[s.attX, { backgroundColor: theme.surface, borderColor: theme.divider }]}
+                >
+                  <Ionicons name="close" size={11} color={theme.text} />
+                </Pressable>
+              </View>
             ))}
           </ScrollView>
         ) : null}
@@ -509,6 +614,15 @@ export default function TaskChatScreen({ navigation, route }: any) {
       <Sheet visible={menu} onClose={() => setMenu(false)} bg={theme.surface} paddingBottom={insets.bottom + 10}>
         <View style={s.sheetBody}>
           <View style={[s.grabber, { backgroundColor: theme.textTertiary }]} />
+          {task ? (
+            <Pressable
+              onPress={() => { setMenu(false); setCtxOpen(true); }}
+              style={[s.action, { borderBottomColor: theme.divider }]}
+            >
+              <Ionicons name="reader-outline" size={21} color={theme.text} />
+              <Text style={[s.actionText, { color: theme.text }]}>Условие и разбор</Text>
+            </Pressable>
+          ) : null}
           <Pressable onPress={pickPhotos} style={[s.action, { borderBottomColor: theme.divider }]}>
             <Ionicons name="image-outline" size={21} color={theme.text} />
             <Text style={[s.actionText, { color: theme.text }]}>Фото из галереи</Text>
@@ -517,9 +631,9 @@ export default function TaskChatScreen({ navigation, route }: any) {
             <Ionicons name="document-outline" size={21} color={theme.text} />
             <Text style={[s.actionText, { color: theme.text }]}>Файл с телефона</Text>
           </Pressable>
-          <Pressable onPress={confirmClear} style={s.action}>
+          <Pressable onPress={confirmClear} style={[s.action, { borderBottomWidth: 0 }]}>
             <Ionicons name="trash-outline" size={21} color={theme.red} />
-            <Text style={[s.actionText, { color: theme.red }]}>Очистить ветку</Text>
+            <Text style={[s.actionText, { color: theme.red }]}>Очистить историю</Text>
           </Pressable>
         </View>
       </Sheet>
@@ -570,21 +684,22 @@ const s = StyleSheet.create({
   subRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
   sub: { fontSize: 11.5 },
 
-  list: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 },
+  list: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24 },
+  listEmpty: { flexGrow: 1, justifyContent: 'center' },
 
-  empty: { paddingTop: 56, paddingHorizontal: 8, alignItems: 'center' },
-  emptyTitle: { fontSize: 21, letterSpacing: -0.2 },
-  emptySub: { fontSize: 13, textAlign: 'center', marginTop: 7, lineHeight: 19 },
-  hints: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 22 },
-  hint: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 999, paddingHorizontal: 13, paddingVertical: 8 },
+  empty: { paddingHorizontal: 8, alignItems: 'center', paddingBottom: 28 },
+  emptyTitle: { fontSize: 23, letterSpacing: -0.3, fontFamily: uiFontOf(600) },
+  emptySub: { fontSize: 13.5, textAlign: 'center', marginTop: 8, lineHeight: 20, maxWidth: 280 },
+  hints: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 24 },
+  hint: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9 },
 
-  mineRow: { alignItems: 'flex-end', marginTop: 16 },
-  mine: { maxWidth: '88%', borderRadius: 18, paddingHorizontal: 13, paddingVertical: 9 },
-  mineText: { lineHeight: 21 },
+  mineRow: { alignItems: 'flex-end', marginTop: 18 },
+  mine: { maxWidth: '86%', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10 },
+  mineText: { lineHeight: 22 },
 
-  theirs: { marginTop: 22 },
-  who: { fontSize: 9.5, letterSpacing: 1.1, marginBottom: 7 },
-  msgAct: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', minHeight: 44, marginTop: 2 },
+  theirs: { marginTop: 26 },
+  msgActs: { flexDirection: 'row', alignItems: 'center', gap: 18, marginTop: 2 },
+  msgAct: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40 },
   msgActText: { fontSize: 12 },
 
   busyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 20, paddingLeft: 2 },
@@ -595,21 +710,28 @@ const s = StyleSheet.create({
   errText: { fontSize: 12.5, flex: 1, lineHeight: 18 },
   errRetry: { fontSize: 12.5, fontFamily: uiFontOf(600) },
 
-  msgImage: { width: 210, height: 165, borderRadius: 14 },
-  tray: { gap: 8, paddingHorizontal: 18, paddingBottom: 8 },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 8, paddingVertical: 6 },
-  chipThumb: { width: 26, height: 26, borderRadius: 7 },
+  msgImage: { width: 208, height: 156, borderRadius: 18 },
+  trayWrap: { maxHeight: 76, flexGrow: 0 },
+  tray: { gap: 10, paddingHorizontal: 14, paddingBottom: 8, paddingTop: 2, alignItems: 'center' },
+  attTile: { width: 58, height: 58 },
+  attImg: { width: 58, height: 58, borderRadius: 14 },
+  attFile: { width: 58, height: 58, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, gap: 3 },
+  attName: { fontSize: 8.5, textAlign: 'center' },
+  attX: {
+    position: 'absolute', top: -5, right: -5, width: 20, height: 20, borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center',
+  },
 
-  bar: { paddingHorizontal: 14, paddingTop: 6 },
+  bar: { paddingHorizontal: 14, paddingTop: 4 },
   field: {
     flexDirection: 'row', alignItems: 'flex-end',
-    borderRadius: 23, borderWidth: StyleSheet.hairlineWidth,
-    paddingLeft: 4, paddingRight: 5, paddingVertical: 4,
+    borderRadius: 26, borderWidth: StyleSheet.hairlineWidth,
+    paddingLeft: 5, paddingRight: 5, paddingVertical: 5,
   },
-  plus: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  input: { flex: 1, paddingTop: 9, paddingBottom: 9, paddingHorizontal: 2, maxHeight: 130, minHeight: 36 },
-  send: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 2, marginLeft: 4 },
-  sendGhost: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 2, marginLeft: 4 },
+  plus: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', marginBottom: 1 },
+  input: { flex: 1, paddingTop: 8, paddingBottom: 8, paddingHorizontal: 2, maxHeight: 132, minHeight: 38 },
+  send: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: 2, marginLeft: 4 },
+  sendGhost: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 2, marginLeft: 4 },
 
   toast: { position: 'absolute', alignSelf: 'center', bottom: 96, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999 },
   toastText: { fontSize: 12.5 },

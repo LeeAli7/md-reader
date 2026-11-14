@@ -342,6 +342,10 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const listRefs = useRef<Record<string, FlatList | null>>({});
   const richRefs = useRef<Record<string, WebView | null>>({});
   const contentH = useRef<Record<string, number>>({});
+  // Когда позиция была восстановлена: правку «контент дорос» применяем только
+  // в первые секунды (картинки/шрифты). Иначе раскрытие решения/спойлера
+  // дёргает ленту — контент вырос, и старый код прыгал назад.
+  const restoredAt = useRef<Record<string, number>>({});
   const viewportH = useRef<Record<string, number>>({});
   // .smd: uri → индекс блока → Y (точные прыжки оглавления).
   const smdBlockY = useRef<Record<string, Record<number, number>>>({});
@@ -384,6 +388,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
     if (ch <= vh + 4) {
       // Крутить нечего (всё влезает) — помечаем готовым, позиция 0.
       restored.current[uri] = rev;
+      restoredAt.current[uri] = Date.now();
       posMap.current[uri] = 0;
       lastFrac.current[uri] = 0;
       restoredFrac.current[uri] = 0;
@@ -391,6 +396,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
       return;
     }
     restored.current[uri] = rev;
+    restoredAt.current[uri] = Date.now();
     (async () => {
       try {
         const f = await getPosition(uri);
@@ -550,7 +556,8 @@ export default function ReaderScreen({ route, navigation }: Props) {
     // попал мимо (доля от меньшей высоты). Дотягиваем, если юзер сам не крутил.
     const rf = restoredFrac.current[uri];
     const rc = restoredCh.current[uri] ?? 0;
-    if (rf !== undefined && rf > 0.005 && rc > 0 && h > rc * 1.15) {
+    const fresh = Date.now() - (restoredAt.current[uri] ?? 0) < 2500;
+    if (fresh && rf !== undefined && rf > 0.005 && rc > 0 && h > rc * 1.15) {
       const lf = lastFrac.current[uri] ?? rf;
       restoredCh.current[uri] = h;
       if (Math.abs(lf - rf) < 0.02) {

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
+import * as NavigationBar from 'expo-navigation-bar';
 import { NavigationContainer, type NavigationContainerRef, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -52,6 +53,18 @@ const FONTS = {
 function ThemedStatusBar() {
   const { theme } = useTheme();
   return <StatusBar style={theme.isDark ? 'light' : 'dark'} animated />;
+}
+
+// Полоска навигации Android (снизу) красится в цвет темы: иначе под контентом
+// остаётся белая плашка — на тёмной теме это выглядит как обрезанный экран.
+function ThemedNavBar() {
+  const { theme } = useTheme();
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    NavigationBar.setBackgroundColorAsync(theme.bg).catch(() => {});
+    NavigationBar.setButtonStyleAsync(theme.isDark ? 'light' : 'dark').catch(() => {});
+  }, [theme.bg, theme.isDark]);
+  return null;
 }
 
 // Навигация получает палитру приложения: иначе при переходах мелькал белый фон
@@ -136,6 +149,7 @@ export default function App() {
         <ThemeProvider>
           <Root navRef={navRef} />
           <ThemedStatusBar />
+          <ThemedNavBar />
         </ThemeProvider>
       </AppSettingsProvider>
     </SafeAreaProvider>
