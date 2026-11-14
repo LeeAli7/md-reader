@@ -34,13 +34,25 @@ async function fetchLatest(): Promise<Release | null> {
     });
     if (!res.ok) return null;
     const list = (await res.json()) as any[];
+    // Порядок в API — по дате создания, а не по версии (v1.4.2 может лежать
+    // ниже v1.3.3). Берём максимум по semver, иначе предложение не покажется.
+    const all: Release[] = [];
     for (const r of list) {
       const apk = (r.assets ?? []).find((a: any) => typeof a.name === 'string' && a.name.endsWith('.apk'));
       if (r.tag_name && apk) {
-        return { version: String(r.tag_name), url: apk.browser_download_url, notes: r.body, published: r.published_at };
+        all.push({ version: String(r.tag_name), url: apk.browser_download_url, notes: r.body, published: r.published_at });
       }
     }
-    return null;
+    all.sort((a, b) => {
+      const x = parseVer(a.version);
+      const y = parseVer(b.version);
+      for (let i = 0; i < Math.max(x.length, y.length); i++) {
+        const d = (y[i] ?? 0) - (x[i] ?? 0);
+        if (d !== 0) return d;
+      }
+      return 0;
+    });
+    return all[0] ?? null;
   } catch {
     return null;
   }
