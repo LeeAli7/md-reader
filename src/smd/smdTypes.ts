@@ -31,7 +31,7 @@ export type SmdBlock =
   | { type: 'figure'; svg?: string; src?: string; alt?: string; caption?: string }
   | { type: 'video'; src: string; poster?: string; caption?: string }
   | { type: 'plot'; exprs: string[]; xmin: number; xmax: number; ymin?: number; ymax?: number; title?: string }
-  | { type: 'task'; difficulty?: string; points?: string; body: string }
+  | { type: 'task'; difficulty?: string; points?: string; body: string; solutions?: string[] }
   | { type: 'spoiler'; title?: string; body: string }
   | { type: 'solution'; body: string }
   | { type: 'card'; front: string; back: string }

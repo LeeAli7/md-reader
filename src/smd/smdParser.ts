@@ -541,16 +541,15 @@ function fenceToBlocks(f: Fence, warn: (msg: string, col?: number) => void): Smd
       const { text, solutions } = extractSolutions(body, warn);
       const diff = attrStr(a, 'difficulty');
       const pts = attrStr(a, 'points');
-      const out: SmdBlock[] = [];
-      if (text.trim()) out.push({
+      // Решение живёт ВНУТРИ задачи (как в Python-эталоне), иначе на экране
+      // появляется второй блок «Решение» под карточкой — см. баг 13.11.2026.
+      return [{
         type: 'task',
         ...(diff ? { difficulty: diff } : {}),
         ...(pts ? { points: pts } : {}),
-        body: text.trim(),
-      });
-      for (const s of solutions) out.push({ type: 'solution', body: s });
-      if (out.length === 0) return [{ type: 'task', body }];
-      return out;
+        body: text.trim() || body,
+        ...(solutions.length ? { solutions } : {}),
+      }];
     }
     case 'callout': {
       const rawKind = attrStr(a, 'kind') ?? 'mistake';

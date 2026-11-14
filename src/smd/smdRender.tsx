@@ -205,6 +205,8 @@ function BlockView({ block, ctx, blocks, index, docKey, onAskTask }: {
   onAskTask?: (t: { chatId: string; title: string; task: string; solution: string }) => void;
 }) {
   const solutionFor = (): string => {
+    const own = block.type === 'task' ? (block.solutions ?? []).join('\n\n') : '';
+    if (own) return own;
     if (!blocks || index === undefined) return '';
     const out: string[] = [];
     for (let k = index + 1; k < blocks.length; k++) {
