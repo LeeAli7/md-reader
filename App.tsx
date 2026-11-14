@@ -18,6 +18,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import SettingsInterfaceScreen from './src/screens/settings/InterfaceScreen';
 import SettingsReadingScreen from './src/screens/settings/ReadingScreen';
 import SettingsAiScreen from './src/screens/settings/AiScreen';
+import { UpdatePrompt } from './src/components/UpdatePrompt';
 
 // Держим нативную заставку до готовности шрифтов: иначе между сплэшем
 // и первым кадром мелькает пустой экран.
@@ -150,6 +151,7 @@ export default function App() {
           <Root navRef={navRef} />
           <ThemedStatusBar />
           <ThemedNavBar />
+          <UpdatePrompt />
         </ThemeProvider>
       </AppSettingsProvider>
     </SafeAreaProvider>

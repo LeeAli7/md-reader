@@ -158,7 +158,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const [moveSubs, setMoveSubs] = useState<FileEntry[]>([]);
   // iOS-шторки действий вместо попапов у кнопок
   const [showCreate, setShowCreate] = useState(false);
-  const [showMore, setShowMore] = useState(false);
   // Удаление безвозвратное только из корзины; здесь — откат и тост на 6 секунд.
   const [undo, setUndo] = useState<{ label: string; moves: { from: string; to: string }[] } | null>(null);
   const undoTimer = useRef<any>(null);
@@ -542,6 +541,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const fileMenuActions = (entry: FileEntry): MenuAction[] => {
     const isFav = favs.includes(entry.uri);
     const acts: MenuAction[] = [];
+    acts.push({ icon: 'checkmark-circle-outline', label: 'Выбрать', onPress: () => startSelecting(entry.uri) });
     if (entry.isDir) {
       acts.push({ icon: 'folder-open-outline', label: 'Открыть', onPress: () => setCurrentPath(entry.uri + '/') });
     } else {
@@ -562,8 +562,8 @@ export default function FileBrowserScreen({ navigation }: Props) {
     const { pageX, pageY } = e.nativeEvent;
     const { width: SW } = Dimensions.get('window');
     setPop({
-      x: typeof pageX === 'number' ? pageX - 248 : SW - 256,
-      y: typeof pageY === 'number' ? pageY : 120,
+      x: Math.max(12, Math.min(SW - 260, (typeof pageX === 'number' ? pageX : SW) - 140)),
+      y: typeof pageY === 'number' ? pageY + 8 : 120,
       entry,
     });
   };
@@ -610,7 +610,7 @@ export default function FileBrowserScreen({ navigation }: Props) {
     return (
       <Pressable
         onPress={() => navigateTo(item)}
-        onLongPress={() => startSelecting(item.uri)}
+        onLongPress={(e) => { Haptics.selectionAsync().catch(() => {}); openPop(item, e); }}
         style={[s.item, isSelected && { backgroundColor: theme.accent + '15' }, { borderBottomColor: theme.divider }]}
       >
         {isSelecting && (
@@ -634,11 +634,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
           )}
           {!item.isDir && <TagChips tags={(tags[item.uri] || [])} theme={theme} />}
         </View>
-        {!isSelecting && (
-          <Pressable onPress={(e) => openPop(item, e)} hitSlop={10} style={s.itemBtn}>
-            <Ionicons name="ellipsis-vertical" size={18} color={theme.textSecondary} />
-          </Pressable>
-        )}
       </Pressable>
     );
   };
@@ -699,9 +694,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
             <View style={s.navActions}>
               <Pressable onPress={() => setShowCreate(true)} hitSlop={8} style={s.navBtn}>
                 <Ionicons name="add" size={26} color={theme.accent} />
-              </Pressable>
-              <Pressable onPress={() => setShowMore(true)} hitSlop={8} style={s.navBtn}>
-                <Ionicons name="ellipsis-horizontal" size={22} color={theme.accent} />
               </Pressable>
             </View>
           )}
@@ -893,29 +885,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
         </View>
       </Sheet>
 
-      {/* Ещё: служебные действия экрана */}
-      <Sheet visible={showMore} onClose={() => setShowMore(false)} bg={theme.surface} paddingBottom={insets.bottom + 12}>
-        <View style={s.sheet}>
-          <View style={[s.sheetHandle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.22)' : theme.textTertiary }]} />
-          <Text style={[s.sheetTitle, { color: theme.text }]}>{pathParts.length ? pathParts[pathParts.length - 1] : 'Мои файлы'}</Text>
-          <Pressable onPress={() => { setShowMore(false); setTab('recent'); }} style={[s.actionRow, { borderBottomColor: theme.divider }]}>
-            <Ionicons name="time-outline" size={22} color={theme.text} />
-            <Text style={[s.actionText, { color: theme.text }]}>Недавние файлы</Text>
-          </Pressable>
-          <Pressable onPress={() => { setShowMore(false); setIsSelecting(true); }} style={[s.actionRow, { borderBottomColor: theme.divider }]}>
-            <Ionicons name="checkmark-circle-outline" size={22} color={theme.text} />
-            <Text style={[s.actionText, { color: theme.text }]}>Выбрать файлы</Text>
-          </Pressable>
-          <Pressable onPress={() => { setShowMore(false); navigation.navigate('Settings'); }} style={[s.actionRow, { borderBottomColor: theme.divider }]}>
-            <Ionicons name="options-outline" size={22} color={theme.text} />
-            <Text style={[s.actionText, { color: theme.text }]}>Настройки</Text>
-          </Pressable>
-          <Pressable onPress={() => setShowMore(false)} style={[s.cancelRow, { backgroundColor: theme.fill }]}>
-            <Text style={[s.actionText, { color: theme.text }]}>Отмена</Text>
-          </Pressable>
-        </View>
-      </Sheet>
-
       {/* ⋮-попап у кнопки */}
       <Popover
         visible={!!pop}
@@ -930,27 +899,41 @@ export default function FileBrowserScreen({ navigation }: Props) {
       {/* Поиск-оверлей: имя + теги + избранное */}
       <Modal visible={showSearch} animationType="slide" onRequestClose={() => setShowSearch(false)}>
         <View style={[s.searchWrap, { backgroundColor: theme.bg, paddingTop: insets.top + 8 }]}>
-          <View style={s.searchBar}>
-            <Pressable onPress={() => setShowSearch(false)} style={s.iconBtn}>
-              <Ionicons name="chevron-back" size={24} color={theme.text} />
+          <View style={s.searchHead}>
+            <View style={[s.searchCapsule, { backgroundColor: theme.surface, borderColor: theme.divider }]}>
+              <Ionicons name="search" size={18} color={theme.textTertiary} />
+              <TextInput
+                style={[s.searchCapsuleInput, { color: theme.text }]}
+                placeholder="Файл или #тег"
+                placeholderTextColor={theme.textTertiary}
+                value={query}
+                onChangeText={setQuery}
+                autoFocus
+                returnKeyType="search"
+              />
+              {query.length > 0 && (
+                <Pressable onPress={() => setQuery('')} hitSlop={10}>
+                  <Ionicons name="close-circle" size={18} color={theme.textTertiary} />
+                </Pressable>
+              )}
+            </View>
+            <Pressable onPress={() => setShowSearch(false)} hitSlop={10}>
+              <Text style={[s.searchCancel, { color: theme.accent }]}>Отмена</Text>
             </Pressable>
-            <TextInput
-              style={[s.searchInputBig, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface }]}
-              placeholder="Имя, #тег…"
-              placeholderTextColor={theme.textSecondary}
-              value={query}
-              onChangeText={setQuery}
-              autoFocus
-            />
           </View>
           <View style={s.scopeRow}>
-            {([['files', 'Файлы'], ['tags', 'Теги'], ['fav', '★ Избранное']] as [SearchScope, string][]).map(([k, label]) => (
+            {([['files', 'Файлы'], ['tags', 'Теги'], ['fav', 'Избранное']] as [SearchScope, string][]).map(([k, label]) => (
               <Pressable
                 key={k}
                 onPress={() => { setScope(k); setSearchTag(null); }}
-                style={[s.scopeChip, scope === k && { backgroundColor: theme.accentSoft, borderColor: theme.accent }]}
+                style={[
+                  s.scopeChip,
+                  scope === k
+                    ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                    : { backgroundColor: 'transparent', borderColor: theme.divider },
+                ]}
               >
-                <Text style={[s.scopeText, { color: scope === k ? theme.accent : theme.textSecondary }]}>{label}</Text>
+                <Text style={[s.scopeText, { color: scope === k ? '#FFFFFF' : theme.textSecondary }]}>{label}</Text>
               </Pressable>
             ))}
           </View>
@@ -1385,11 +1368,19 @@ function styles(theme: any, insets: any) {
     hereRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 10, borderRadius: 10, marginBottom: 4 },
     warn: { fontSize: 12, textAlign: 'center', marginBottom: 4 },
     searchWrap: { flex: 1 },
-    searchBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingBottom: 8 },
-    searchInputBig: { flex: 1, fontSize: 16, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginRight: 8 },
-    scopeRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
-    scopeChip: { borderWidth: 1, borderColor: 'transparent', borderRadius: 99, paddingHorizontal: 14, paddingVertical: 7 },
-    scopeText: { fontSize: 13, fontWeight: '500' },
+    // Поиск: поле с иконкой внутри, справа одна текстовая кнопка. Без второго
+    // ряда «назад + поле + рамки»: заголовок окна здесь не нужен.
+    searchHead: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingBottom: 10 },
+    searchCapsule: {
+      flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+      borderWidth: StyleSheet.hairlineWidth, borderRadius: 12,
+      paddingHorizontal: 12, height: 44,
+    },
+    searchCapsuleInput: { flex: 1, fontSize: 16, padding: 0 },
+    searchCancel: { fontSize: 15, fontFamily: uiFontOf(500) },
+    scopeRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 10 },
+    scopeChip: { borderRadius: 99, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent', paddingHorizontal: 14, paddingVertical: 7 },
+    scopeText: { fontSize: 13, fontFamily: uiFontOf(500) },
     tagRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth },
     tagName: { flex: 1, fontSize: 15, fontWeight: '500' },
     backRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 16, paddingVertical: 8 },

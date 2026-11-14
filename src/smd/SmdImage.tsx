@@ -17,6 +17,7 @@ export const SmdImage = React.memo(function SmdImage({
   docKey,
   color,
   muted,
+  knownRatio,
 }: {
   src: string;
   alt?: string;
@@ -24,11 +25,12 @@ export const SmdImage = React.memo(function SmdImage({
   docKey?: string;
   color: string;
   muted: string;
+  knownRatio?: number;
 }) {
   const uri = useMemo(() => resolveAsset(src, docKey), [src, docKey]);
   const win = useWindowDimensions();
   const maxW = Math.max(200, Math.min(win.width - 60, win.height * 0.9));
-  const [ratio, setRatio] = useState(0);
+  const [ratio, setRatio] = useState(knownRatio ?? 0);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
 

@@ -320,7 +320,9 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const [treeFolder, setTreeFolder] = useState<string | null>(null);
   const [treeFiles, setTreeFiles] = useState<{ uri: string; title: string }[]>([]);
   const [showUI, setShowUI] = useState(true);
-  const [progress, setProgress] = useState(0);
+  // Прогресс чтения — Animated, без setState на каждый кадр скролла:
+  // раньше перерисовывался весь markdown-дерево и лента дёргалась.
+  const progressAnim = useRef(new Animated.Value(0)).current;
   const [recent, setRecent] = useState<RecentEntry[]>([]);
   const touchY = useRef(0);
 
@@ -572,7 +574,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
     const max = Math.max(1, contentSize.height - layoutMeasurement.height);
     const frac = Math.max(0, Math.min(1, contentOffset.y / max));
     trackScroll(uri, frac);
-    if (isMain) setProgress(frac);
+    if (isMain) progressAnim.setValue(frac);
   };
 
   const makeContentSize = (uri: string, chunkCount: number, rev: number) => (_w: number, h: number) => {
@@ -930,7 +932,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
               <Ionicons name="ellipsis-horizontal" size={22} color={rt.text} />
             </Pressable>
           </View>
-          <ReadingProgressBar progress={progress} color={rt.link} />
+          <ReadingProgressBar animated={progressAnim} color={rt.link} />
         </>
       )}
 

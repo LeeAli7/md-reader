@@ -248,6 +248,7 @@ function BlockView({ block, ctx, blocks, index, docKey, onAskTask }: {
             docKey={ctx.docKey}
             color={ctx.rt.text}
             muted={ctx.rt.muted ?? ctx.rt.text + '80'}
+            knownRatio={block.w && block.h ? block.w / block.h : undefined}
           />
         );
       }

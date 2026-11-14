@@ -453,7 +453,9 @@ function fenceToBlocks(f: Fence, warn: (msg: string, col?: number) => void): Smd
         warn(`:::figure без src и без <svg> в теле (строка ${f.line})`);
         return [{ type: 'theory', body }];
       }
-      return [{ type: 'figure', src, alt, ...(caption ? { caption } : {}) }];
+      const w = parseInt(attrStr(a, 'w') ?? '', 10) || undefined;
+      const h = parseInt(attrStr(a, 'h') ?? '', 10) || undefined;
+      return [{ type: 'figure', src, alt, ...(caption ? { caption } : {}), ...(w && h ? { w, h } : {}) }];
     }
     case 'video': {
       const src = attrStr(a, 'src') ?? '';
