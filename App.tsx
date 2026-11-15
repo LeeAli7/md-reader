@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { SystemBars } from 'react-native-edge-to-edge';
 import { Platform, View } from 'react-native';
 import { NavigationContainer, type NavigationContainerRef, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -54,13 +53,6 @@ const FONTS = {
 function ThemedStatusBar() {
   const { theme } = useTheme();
   return <StatusBar style={theme.isDark ? 'light' : 'dark'} animated />;
-}
-
-// Edge-to-edge: системной плашки под контентом нет вообще — остаётся только
-// «палочка» жеста. Иконки в ней — по теме, фон рисует сам экран.
-function ThemedSystemBars() {
-  const { theme } = useTheme();
-  return <SystemBars style={{ navigationBar: theme.isDark ? 'light' : 'dark' }} />;
 }
 
 // Навигация получает палитру приложения: иначе при переходах мелькал белый фон
@@ -145,7 +137,6 @@ export default function App() {
         <ThemeProvider>
           <Root navRef={navRef} />
           <ThemedStatusBar />
-          <ThemedSystemBars />
           <UpdatePrompt />
         </ThemeProvider>
       </AppSettingsProvider>

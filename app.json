@@ -14,8 +14,7 @@
           "backgroundColor": "#000000"
         }
       }
-    ],
-    ["react-native-edge-to-edge", { "android": { "enforceNavigationBarContrast": false, "parentTheme": "Default" } }]
+    ]
   ],
   "icon": "./assets/icon.png",
   "backgroundColor": "#FFFFFF",
@@ -146,7 +145,7 @@
       }
     ],
     "package": "com.helloworld",
-    "versionCode": 9
+    "versionCode": 10
   },
   "name": "Supreader",
   "slug": "supreader",
@@ -154,5 +153,9 @@
     "bundleIdentifier": "com.supreader.app"
   },
   "userInterfaceStyle": "automatic",
-  "version": "1.4.4"
+  "androidNavigationBar": {
+    "barStyle": "light-content",
+    "enforceContrast": false
+  },
+  "version": "1.4.5"
 }

@@ -24,6 +24,7 @@ import { readingFonts, getReadingFont, LINE_HEIGHTS } from '../theme/fonts';
 import { type as tp, font as uiFontOf, mono } from '../theme/type';
 import { useReadingStyle } from '../context/AppSettingsContext';
 import { CodeBlock } from '../components/CodeBlock';
+import * as NavigationBar from 'expo-navigation-bar';
 import { ReaderTOC, Heading } from '../components/ReaderTOC';
 import { ContextPicker } from '../components/ContextPicker';
 import { contextItemsFromDoc, contextPrompt } from '../smd/contextItems';
@@ -326,6 +327,17 @@ export default function ReaderScreen({ route, navigation }: Props) {
   // раньше перерисовывался весь markdown-дерево и лента дёргалась.
   const progressAnim = useRef(new Animated.Value(0)).current;
   // Кружок ассистента: выбрать куски документа и уйти в чат с контекстом.
+  // Пока читаем — системной панели нет: только «палочка» поверх листа.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    NavigationBar.setBehaviorAsync('overlay-swipe').catch(() => {});
+    NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+    return () => {
+      NavigationBar.setBehaviorAsync('inset-swipe').catch(() => {});
+      NavigationBar.setVisibilityAsync('visible').catch(() => {});
+    };
+  }, []);
+
   const [showCtx, setShowCtx] = useState(false);
   const [ctxSel, setCtxSel] = useState<string[]>([]);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
@@ -838,7 +850,7 @@ export default function ReaderScreen({ route, navigation }: Props) {
                   fonts={{ regular: fontFamily, italic: rs.italicFamily, bold: rs.boldFamily, mono: 'JetBrainsMono' }}
                   rules={rules}
                   docKey={doc.uri}
-                  onAskTask={(t) => { setShowUI(true); navigation.navigate('TaskChat', t); }}
+                  onAskTask={(t) => { setShowUI(true); navigation.navigate('TaskChat', { ...t, uri: doc.uri }); }}
                   onBlockLayout={(i, y) => {
                     const m = smdBlockY.current[doc.uri] ?? {};
                     m[i] = y;
@@ -919,45 +931,6 @@ export default function ReaderScreen({ route, navigation }: Props) {
         </>
       )}
 
-      {main.kind === 'smd' && main.smdDoc ? (
-        <>
-          <Pressable
-            onPress={() => { setCtxSel([]); setShowCtx(true); }}
-            style={({ pressed }) => [
-              s.assistFab,
-              {
-                bottom: insets.bottom + 92,
-                backgroundColor: pressed ? rt.link : theme.accent,
-                shadowColor: '#000',
-              },
-            ]}
-            accessibilityLabel="Ассистент: спросить по документу"
-          >
-            <Ionicons name="sparkles" size={22} color="#FFFFFF" />
-          </Pressable>
-          <ContextPicker
-            visible={showCtx}
-            items={contextItemsFromDoc(main.smdDoc)}
-            selected={ctxSel}
-            onToggle={(id) => setCtxSel((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))}
-            onClose={() => setShowCtx(false)}
-            onConfirm={() => {
-              const all = contextItemsFromDoc(main.smdDoc!);
-              const chosen = all.filter((it) => ctxSel.includes(it.id));
-              if (!chosen.length) return;
-              setShowCtx(false);
-              navigation.navigate('TaskChat', {
-                chatId: chatIdFor(active.uri, 'assistant'),
-                title: 'Помощник по файлу',
-                task: '',
-                uri: active.uri,
-                contexts: chosen.map((it) => it.label),
-                context: contextPrompt(chosen),
-              });
-            }}
-          />
-        </>
-      ) : null}
 
       <View style={{ flex: 1, flexDirection: 'column' }}>
         {renderPane(active, main, false)}
@@ -1250,6 +1223,46 @@ export default function ReaderScreen({ route, navigation }: Props) {
           </View>
         </View>
       </Modal>
+      {main.kind === 'smd' && main.smdDoc ? (
+        <>
+          <Pressable
+            onPress={() => { setCtxSel([]); setShowCtx(true); }}
+            style={({ pressed }) => [
+              s.assistFab,
+              {
+                bottom: insets.bottom + 92,
+                backgroundColor: pressed ? rt.link : theme.accent,
+                shadowColor: '#000',
+              },
+            ]}
+            accessibilityLabel="Ассистент: спросить по документу"
+          >
+            <Ionicons name="sparkles" size={22} color="#FFFFFF" />
+          </Pressable>
+          <ContextPicker
+            visible={showCtx}
+            items={contextItemsFromDoc(main.smdDoc)}
+            selected={ctxSel}
+            onToggle={(id) => setCtxSel((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))}
+            onClose={() => setShowCtx(false)}
+            onConfirm={() => {
+              const all = contextItemsFromDoc(main.smdDoc!);
+              const chosen = all.filter((it) => ctxSel.includes(it.id));
+              if (!chosen.length) return;
+              setShowCtx(false);
+              navigation.navigate('TaskChat', {
+                chatId: chatIdFor(active.uri, 'assistant'),
+                title: 'Помощник по файлу',
+                task: '',
+                uri: active.uri,
+                contexts: chosen.map((it) => it.label),
+                context: contextPrompt(chosen),
+              });
+            }}
+          />
+        </>
+      ) : null}
+
     </View>
   );
 }
@@ -1272,7 +1285,7 @@ function styles(insets: any) {
     scroll: { flex: 1 },
     content: { paddingHorizontal: 22, paddingTop: 10, paddingBottom: 136 },
     assistFab: {
-      position: 'absolute', right: 18, width: 54, height: 54, borderRadius: 27,
+      position: 'absolute', right: 18, zIndex: 40, width: 54, height: 54, borderRadius: 27,
       alignItems: 'center', justifyContent: 'center',
       shadowOpacity: 0.22, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6,
     },
