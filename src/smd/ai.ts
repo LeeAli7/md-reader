@@ -405,6 +405,22 @@ export async function saveChat(chatId: string, msgs: ChatMsg[]): Promise<void> {
   } catch {}
 }
 
+// Все ветки ИИ — по префиксу: так «очистить сессии» не трогает настройки.
+export async function clearAllChats(): Promise<number> {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const mine = keys.filter((k) => k.startsWith('smd_chat_'));
+    if (mine.length) await AsyncStorage.multiRemove(mine);
+    return mine.length;
+  } catch {
+    return 0;
+  }
+}
+
+export function newChatId(): string {
+  return `smd_chat_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
+
 export async function appendChat(chatId: string, msg: ChatMsg): Promise<void> {
   try {
     const cur = await loadChat(chatId);

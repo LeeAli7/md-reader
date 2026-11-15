@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, Pressable, StyleSheet, Alert,
   TextInput, Modal, Dimensions, NativeSyntheticEvent, NativeTouchEvent,
@@ -17,6 +17,9 @@ import { type as tp, font as uiFontOf } from '../theme/type';
 import { FileTypeIcon } from '../components/FileTypeIcon';
 import { TagChips } from '../components/TagChips';
 import { Popover } from '../components/Popover';
+import { AppDrawer } from '../components/AppDrawer';
+import { clearAllChats, newChatId } from '../smd/ai';
+import Constants from 'expo-constants';
 import type { MenuAction } from '../components/OverflowMenu';
 
 declare const require: any;
@@ -145,6 +148,8 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const [fabAt, setFabAt] = useState({ x: 0, y: 0 });
   // Поиск-оверлей
   const [showSearch, setShowSearch] = useState(false);
+  const [showDrawer, setShowDrawer] = useState(false);
+  const [drawerTags, setDrawerTags] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<SearchScope>('files');
   const [searchTag, setSearchTag] = useState<string | null>(null);
@@ -659,6 +664,28 @@ export default function FileBrowserScreen({ navigation }: Props) {
     </View>
   ) : null;
 
+  useEffect(() => {
+    if (!showDrawer) return;
+    getTagMap()
+      .then((m) => setDrawerTags(Object.keys(m ?? {}).sort((a, b) => a.localeCompare(b, 'ru'))))
+      .catch(() => {});
+  }, [showDrawer]);
+
+  const confirmClearSessions = () => {
+    Alert.alert('Очистить сессии?', 'История всех вопросов к помощнику будет удалена. Файлы останутся.', [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Очистить',
+        style: 'destructive',
+        onPress: async () => {
+          const n = await clearAllChats();
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          Alert.alert('Готово', n ? `Удалено веток: ${n}` : 'История уже пуста');
+        },
+      },
+    ]);
+  };
+
   return (
     <View style={[s.container, { backgroundColor: theme.bg }]}>
       {/* Шапка поверх списка: короткая, внизу плавно растворяется */}
@@ -670,6 +697,11 @@ export default function FileBrowserScreen({ navigation }: Props) {
         pointerEvents="box-none"
       >
         <View style={s.navRow}>
+          {!isSelecting ? (
+            <Pressable onPress={() => setShowDrawer(true)} hitSlop={10} style={s.menuBtn}>
+              <Ionicons name="menu" size={24} color={theme.text} />
+            </Pressable>
+          ) : null}
           {pathParts.length > 0 && !isSelecting ? (
             <Pressable onPress={goBack} hitSlop={10} style={s.backChevron}>
               <Ionicons name="chevron-back" size={26} color={theme.accent} />
@@ -731,6 +763,10 @@ export default function FileBrowserScreen({ navigation }: Props) {
           </View>
         ) : (
           <FlatList
+            removeClippedSubviews
+            initialNumToRender={12}
+            maxToRenderPerBatch={8}
+            windowSize={7}
             data={visibleEntries}
             keyExtractor={(item) => item.uri}
             contentContainerStyle={[s.list, { paddingTop: headH + 2 }]}
@@ -750,6 +786,10 @@ export default function FileBrowserScreen({ navigation }: Props) {
           </View>
         ) : (
           <FlatList
+            removeClippedSubviews
+            initialNumToRender={10}
+            maxToRenderPerBatch={8}
+            windowSize={7}
             data={recent}
             keyExtractor={(item) => item.uri}
             contentContainerStyle={[s.list, { paddingTop: headH + 2 }]}
@@ -894,6 +934,77 @@ export default function FileBrowserScreen({ navigation }: Props) {
         theme={theme}
         onClose={() => setPop(null)}
         actions={pop ? fileMenuActions(pop.entry) : []}
+      />
+
+      <AppDrawer
+        visible={showDrawer}
+        onClose={() => setShowDrawer(false)}
+        header={{ title: 'Supreader', subtitle: `Версия ${Constants.expoConfig?.version ?? '—'}` }}
+        sections={[
+          {
+            title: 'Библиотека',
+            rows: [
+              {
+                icon: 'folder-outline',
+                label: 'Все файлы',
+                active: tab === 'files',
+                onPress: () => { setCurrentPath(MD_READER_DIR); setTab('files'); },
+              },
+              {
+                icon: 'time-outline',
+                label: 'Недавние',
+                active: tab === 'recent',
+                onPress: () => setTab('recent'),
+              },
+            ],
+          },
+          ...(drawerTags.length
+            ? [{
+                title: 'Категории',
+                rows: drawerTags.slice(0, 6).map((t) => ({
+                  icon: 'pricetag-outline' as const,
+                  label: t,
+                  onPress: () => {
+                    setScope('tags');
+                    setSearchTag(t);
+                    setQuery('');
+                    setShowSearch(true);
+                  },
+                })),
+              }]
+            : []),
+          {
+            title: 'Помощник',
+            rows: [
+              {
+                icon: 'sparkles-outline',
+                label: 'Новая сессия',
+                onPress: () => navigation.navigate('TaskChat', {
+                  chatId: newChatId(),
+                  title: 'Помощник',
+                  task: '',
+                }),
+              },
+              {
+                icon: 'trash-outline',
+                label: 'Очистить все сессии',
+                danger: true,
+                onPress: confirmClearSessions,
+              },
+            ],
+          },
+          {
+            title: 'Приложение',
+            rows: [
+              {
+                icon: 'options-outline',
+                label: 'Настройки',
+                onPress: () => navigation.navigate('Settings'),
+              },
+            ],
+          },
+        ]}
+        footer="Читалка .smd · один файл, всё внутри"
       />
 
       {/* Поиск-оверлей: имя + теги + избранное */}
@@ -1255,6 +1366,7 @@ function styles(theme: any, insets: any) {
 
     // --- новый навбар: крупный заголовок, крошки строкой, поиск полем ---
     navRow: { flexDirection: 'row', alignItems: 'center', minHeight: 42 },
+    menuBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginLeft: 2 },
     backChevron: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginLeft: -10 },
     navTitle: { flex: 1, ...tp.largeTitle, letterSpacing: -0.6 },
     navActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },

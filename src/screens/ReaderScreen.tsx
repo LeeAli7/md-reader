@@ -4,7 +4,6 @@ import {
   Modal, FlatList, NativeSyntheticEvent, NativeScrollEvent, Dimensions, Platform,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import * as NavigationBar from 'expo-navigation-bar';
 import { WebView } from 'react-native-webview';
 import { exportFile } from '../utils/importExport';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,6 +25,9 @@ import { type as tp, font as uiFontOf, mono } from '../theme/type';
 import { useReadingStyle } from '../context/AppSettingsContext';
 import { CodeBlock } from '../components/CodeBlock';
 import { ReaderTOC, Heading } from '../components/ReaderTOC';
+import { ContextPicker } from '../components/ContextPicker';
+import { contextItemsFromDoc, contextPrompt } from '../smd/contextItems';
+import { chatIdFor } from '../smd/ai';
 import { ReadingProgressBar } from '../components/ReadingProgressBar';
 import { Popover } from '../components/Popover';
 import { DocSkeleton } from '../components/Skeleton';
@@ -323,6 +325,9 @@ export default function ReaderScreen({ route, navigation }: Props) {
   // Прогресс чтения — Animated, без setState на каждый кадр скролла:
   // раньше перерисовывался весь markdown-дерево и лента дёргалась.
   const progressAnim = useRef(new Animated.Value(0)).current;
+  // Кружок ассистента: выбрать куски документа и уйти в чат с контекстом.
+  const [showCtx, setShowCtx] = useState(false);
+  const [ctxSel, setCtxSel] = useState<string[]>([]);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
   const touchY = useRef(0);
 
@@ -421,30 +426,8 @@ export default function ReaderScreen({ route, navigation }: Props) {
   const rt = getReadingTheme(readingTheme);
   const isDarkReading = rt.dark;
 
-  // Нижняя системная полоса — часть листа, а не интерфейса. App.tsx красит её
-  // по теме UI (в тёмной — чёрная), но лист чтения бывает сепией/белым: внутри
-  // файла это и читалось как «чёрная полоса» под текстом. Пока читалка на
-  // экране — цвет навбара берём у листа; на blur (редактор, чат) и на unmount
-  // возвращаем тему интерфейса, иначе полоса останется чужой в меню.
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    const applyReader = () => {
-      NavigationBar.setBackgroundColorAsync(rt.bg).catch(() => {});
-      NavigationBar.setButtonStyleAsync(rt.dark ? 'light' : 'dark').catch(() => {});
-    };
-    const restoreApp = () => {
-      NavigationBar.setBackgroundColorAsync(theme.bg).catch(() => {});
-      NavigationBar.setButtonStyleAsync(theme.isDark ? 'light' : 'dark').catch(() => {});
-    };
-    applyReader();
-    const unsubFocus = navigation.addListener('focus', applyReader);
-    const unsubBlur = navigation.addListener('blur', restoreApp);
-    return () => {
-      unsubFocus();
-      unsubBlur();
-      restoreApp();
-    };
-  }, [rt.bg, rt.dark, theme.bg, theme.isDark, navigation]);
+  // Полосы навигации больше нет как отдельной плашки (edge-to-edge):
+  // контент рисуется под системным жестом, поэтому красить нечего.
 
   const loadRecent = useCallback(async () => {
     try { setRecent(await getRecent()); } catch {}
@@ -936,6 +919,46 @@ export default function ReaderScreen({ route, navigation }: Props) {
         </>
       )}
 
+      {main.kind === 'smd' && main.smdDoc ? (
+        <>
+          <Pressable
+            onPress={() => { setCtxSel([]); setShowCtx(true); }}
+            style={({ pressed }) => [
+              s.assistFab,
+              {
+                bottom: insets.bottom + 92,
+                backgroundColor: pressed ? rt.link : theme.accent,
+                shadowColor: '#000',
+              },
+            ]}
+            accessibilityLabel="Ассистент: спросить по документу"
+          >
+            <Ionicons name="sparkles" size={22} color="#FFFFFF" />
+          </Pressable>
+          <ContextPicker
+            visible={showCtx}
+            items={contextItemsFromDoc(main.smdDoc)}
+            selected={ctxSel}
+            onToggle={(id) => setCtxSel((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))}
+            onClose={() => setShowCtx(false)}
+            onConfirm={() => {
+              const all = contextItemsFromDoc(main.smdDoc!);
+              const chosen = all.filter((it) => ctxSel.includes(it.id));
+              if (!chosen.length) return;
+              setShowCtx(false);
+              navigation.navigate('TaskChat', {
+                chatId: chatIdFor(active.uri, 'assistant'),
+                title: 'Помощник по файлу',
+                task: '',
+                uri: active.uri,
+                contexts: chosen.map((it) => it.label),
+                context: contextPrompt(chosen),
+              });
+            }}
+          />
+        </>
+      ) : null}
+
       <View style={{ flex: 1, flexDirection: 'column' }}>
         {renderPane(active, main, false)}
         {splitDoc && renderPane(
@@ -1248,6 +1271,11 @@ function styles(insets: any) {
     iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
     scroll: { flex: 1 },
     content: { paddingHorizontal: 22, paddingTop: 10, paddingBottom: 136 },
+    assistFab: {
+      position: 'absolute', right: 18, width: 54, height: 54, borderRadius: 27,
+      alignItems: 'center', justifyContent: 'center',
+      shadowOpacity: 0.22, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6,
+    },
     pane: { flex: 1 },
     splitBar: {
       flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10,

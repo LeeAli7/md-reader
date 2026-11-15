@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Platform, View } from 'react-native';
-import * as NavigationBar from 'expo-navigation-bar';
+import { SystemBars } from 'react-native-edge-to-edge';
 import { NavigationContainer, type NavigationContainerRef, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -56,16 +56,11 @@ function ThemedStatusBar() {
   return <StatusBar style={theme.isDark ? 'light' : 'dark'} animated />;
 }
 
-// Полоска навигации Android (снизу) красится в цвет темы: иначе под контентом
-// остаётся белая плашка — на тёмной теме это выглядит как обрезанный экран.
-function ThemedNavBar() {
+// Edge-to-edge: системной плашки под контентом нет вообще — остаётся только
+// «палочка» жеста. Иконки в ней — по теме, фон рисует сам экран.
+function ThemedSystemBars() {
   const { theme } = useTheme();
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    NavigationBar.setBackgroundColorAsync(theme.bg).catch(() => {});
-    NavigationBar.setButtonStyleAsync(theme.isDark ? 'light' : 'dark').catch(() => {});
-  }, [theme.bg, theme.isDark]);
-  return null;
+  return <SystemBars style={{ navigationBar: theme.isDark ? 'light' : 'dark' }} />;
 }
 
 // Навигация получает палитру приложения: иначе при переходах мелькал белый фон
@@ -90,7 +85,7 @@ function Root({ navRef }: { navRef: React.MutableRefObject<NavigationContainerRe
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',
-          animationDuration: 280,
+          animationDuration: 210,
           gestureEnabled: true,
           fullScreenGestureEnabled: true,
           contentStyle: { backgroundColor: theme.bg },
@@ -150,7 +145,7 @@ export default function App() {
         <ThemeProvider>
           <Root navRef={navRef} />
           <ThemedStatusBar />
-          <ThemedNavBar />
+          <ThemedSystemBars />
           <UpdatePrompt />
         </ThemeProvider>
       </AppSettingsProvider>

@@ -12,6 +12,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { ContextPicker } from '../components/ContextPicker';
+import { contextItemsFromDoc, contextPrompt, type ContextItem } from '../smd/contextItems';
+import { parseSmd } from '../smd/smdParser';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
@@ -90,6 +93,14 @@ export default function TaskChatScreen({ navigation, route }: any) {
   const title: string = params.title ?? 'Вопрос по задаче';
   const task: string = params.task ?? '';
   const solution: string = params.solution ?? '';
+  // Контекст: куски документа, добавленные кружком ассистента или кнопкой «+».
+  // Храним снимком текста — уходит с каждым запросом, пока его не убрать.
+  const [ctxTexts, setCtxTexts] = useState<string[]>(params.context ? [params.context] : []);
+  const [ctxLabels, setCtxLabels] = useState<string[]>(params.contexts ?? []);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerItems, setPickerItems] = useState<ContextItem[] | null>(null);
+  const [pickSel, setPickSel] = useState<string[]>([]);
+  const taskForAi = [task, ...ctxTexts].filter(Boolean).join('\n\n');
 
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [q, setQ] = useState('');
@@ -181,8 +192,8 @@ export default function TaskChatScreen({ navigation, route }: any) {
     }
     resumedRef.current = true;
     lastJobRef.current = job;
-    runAskTask(chatId, task, solution, await historyBeforeLastUser(chatId), job).catch(() => {});
-  }, [chatId, task, solution]);
+    runAskTask(chatId, taskForAi, solution, await historyBeforeLastUser(chatId), job).catch(() => {});
+  }, [chatId, taskForAi, solution]);
 
   useEffect(() => {
     resumePending();
@@ -312,7 +323,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
     await appendChat(chatId, userMsg);
     setBusy(true);
     setElapsed(0);
-    runAskTask(chatId, task, solution, await historyBeforeLastUser(chatId), job).catch(() => {});
+    runAskTask(chatId, taskForAi, solution, await historyBeforeLastUser(chatId), job).catch(() => {});
   };
 
   const send = async () => {
@@ -381,7 +392,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
     lastJobRef.current = job;
     setErr(null);
     setBusy(true);
-    runAskTask(chatId, task, solution, await historyBeforeLastUser(chatId), job).catch(() => {});
+    runAskTask(chatId, taskForAi, solution, await historyBeforeLastUser(chatId), job).catch(() => {});
   };
 
   const retry = async () => {
@@ -389,7 +400,22 @@ export default function TaskChatScreen({ navigation, route }: any) {
     if (!job) return;
     setErr(null);
     setBusy(true);
-    runAskTask(chatId, task, solution, await historyBeforeLastUser(chatId), job).catch(() => {});
+    runAskTask(chatId, taskForAi, solution, await historyBeforeLastUser(chatId), job).catch(() => {});
+  };
+
+  // «+ контекст» из чата: блоки берём прямо из файла, без пересылки через params.
+  const openPicker = async () => {
+    if (!params.uri) return;
+    if (!pickerItems) {
+      try {
+        const raw = await FileSystem.readAsStringAsync(params.uri);
+        setPickerItems(contextItemsFromDoc(parseSmd(raw, params.uri)));
+      } catch {
+        setPickerItems([]);
+      }
+    }
+    setPickSel([]);
+    setPickerOpen(true);
   };
 
   const stop = () => {
@@ -578,6 +604,38 @@ export default function TaskChatScreen({ navigation, route }: any) {
           </ScrollView>
         ) : null}
 
+        {(ctxLabels.length > 0 || params.uri) ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.ctxRow}
+            keyboardShouldPersistTaps="handled"
+          >
+            {ctxLabels.map((label, i) => (
+              <Pressable
+                key={`${label}-${i}`}
+                onPress={() => {
+                  setCtxLabels((cur) => cur.filter((_, k) => k !== i));
+                  setCtxTexts((cur) => cur.filter((_, k) => k !== i));
+                }}
+                style={[s.ctxChip, { backgroundColor: theme.fill, borderColor: theme.divider }]}
+              >
+                <Text style={[s.ctxChipText, { color: theme.text }]} numberOfLines={1}>{label}</Text>
+                <Ionicons name="close" size={12} color={theme.textSecondary} />
+              </Pressable>
+            ))}
+            {params.uri ? (
+              <Pressable
+                onPress={openPicker}
+                style={[s.ctxChip, { backgroundColor: 'transparent', borderColor: theme.divider }]}
+              >
+                <Ionicons name="add" size={14} color={theme.accent} />
+                <Text style={[s.ctxChipText, { color: theme.accent }]}>контекст</Text>
+              </Pressable>
+            ) : null}
+          </ScrollView>
+        ) : null}
+
         {/* Одно поле: «+» слева, отправка справа, всё внутри скругления */}
         <View style={[s.bar, { paddingBottom: Math.max(8, insets.bottom) }]}>
           <View style={[s.field, { backgroundColor: theme.fill, borderColor: theme.divider }]}>
@@ -637,6 +695,23 @@ export default function TaskChatScreen({ navigation, route }: any) {
           </Pressable>
         </View>
       </Sheet>
+
+      <ContextPicker
+        visible={pickerOpen}
+        items={pickerItems ?? []}
+        selected={pickSel}
+        title="Добавить контекст"
+        onToggle={(id) => setPickSel((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))}
+        onClose={() => setPickerOpen(false)}
+        onConfirm={() => {
+          const all = pickerItems ?? [];
+          const chosen = all.filter((it) => pickSel.includes(it.id));
+          if (!chosen.length) return;
+          setCtxLabels((cur) => [...cur, ...chosen.map((it) => it.label)]);
+          setCtxTexts((cur) => [...cur, contextPrompt(chosen)]);
+          setPickerOpen(false);
+        }}
+      />
 
       {/* Условие и разбор — по тапу на подпись под заголовком */}
       <Sheet visible={ctxOpen} onClose={() => setCtxOpen(false)} bg={theme.surface} paddingBottom={insets.bottom + 12}>
@@ -722,6 +797,13 @@ const s = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center',
   },
 
+  ctxRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 8 },
+  ctxChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 220,
+    borderWidth: StyleSheet.hairlineWidth, borderRadius: 99,
+    paddingHorizontal: 10, paddingVertical: 6,
+  },
+  ctxChipText: { fontSize: 12.5, fontFamily: uiFontOf(500) },
   bar: { paddingHorizontal: 14, paddingTop: 4 },
   field: {
     flexDirection: 'row', alignItems: 'flex-end',
