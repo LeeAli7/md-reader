@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Platform, View } from 'react-native';
 import { SystemBars } from 'react-native-edge-to-edge';
+import { Platform, View } from 'react-native';
 import { NavigationContainer, type NavigationContainerRef, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
