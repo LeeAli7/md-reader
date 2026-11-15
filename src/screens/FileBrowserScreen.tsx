@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, Pressable, StyleSheet, Alert,
-  TextInput, Modal, Dimensions, NativeSyntheticEvent, NativeTouchEvent,
+  TextInput, Modal, Dimensions, ScrollView, NativeSyntheticEvent, NativeTouchEvent,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
@@ -17,7 +17,6 @@ import { type as tp, font as uiFontOf } from '../theme/type';
 import { FileTypeIcon } from '../components/FileTypeIcon';
 import { TagChips } from '../components/TagChips';
 import { Popover } from '../components/Popover';
-import { AppDrawer } from '../components/AppDrawer';
 import { clearAllChats, newChatId } from '../smd/ai';
 import Constants from 'expo-constants';
 import type { MenuAction } from '../components/OverflowMenu';
@@ -148,8 +147,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
   const [fabAt, setFabAt] = useState({ x: 0, y: 0 });
   // Поиск-оверлей
   const [showSearch, setShowSearch] = useState(false);
-  const [showDrawer, setShowDrawer] = useState(false);
-  const [drawerTags, setDrawerTags] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<SearchScope>('files');
   const [searchTag, setSearchTag] = useState<string | null>(null);
@@ -588,10 +585,9 @@ export default function FileBrowserScreen({ navigation }: Props) {
   // --- Поиск: имя + теги + избранное ---
   const q = query.trim().toLowerCase();
   const searchFiles = React.useMemo(() => {
-    if (!q) return [];
-    let list = entries.filter((e) => !e.isDir && e.name.toLowerCase().includes(q));
+    let list = entries.filter((e) => !e.isDir && (!q || e.name.toLowerCase().includes(q)));
     if (scope === 'fav') list = list.filter((e) => favs.includes(e.uri));
-    if (scope === 'tags' && searchTag) list = list.filter((e) => (tags[e.uri] || []).includes(searchTag));
+    if (searchTag) list = list.filter((e) => (tags[e.uri] || []).includes(searchTag));
     return list;
   }, [entries, q, scope, favs, tags, searchTag]);
   const searchTags = React.useMemo(() => {
@@ -664,13 +660,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
     </View>
   ) : null;
 
-  useEffect(() => {
-    if (!showDrawer) return;
-    getTagMap()
-      .then((m) => setDrawerTags(Object.keys(m ?? {}).sort((a, b) => a.localeCompare(b, 'ru'))))
-      .catch(() => {});
-  }, [showDrawer]);
-
   const confirmClearSessions = () => {
     Alert.alert('Очистить сессии?', 'История всех вопросов к помощнику будет удалена. Файлы останутся.', [
       { text: 'Отмена', style: 'cancel' },
@@ -697,11 +686,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
         pointerEvents="box-none"
       >
         <View style={s.navRow}>
-          {!isSelecting ? (
-            <Pressable onPress={() => setShowDrawer(true)} hitSlop={10} style={s.menuBtn}>
-              <Ionicons name="menu" size={24} color={theme.text} />
-            </Pressable>
-          ) : null}
           {pathParts.length > 0 && !isSelecting ? (
             <Pressable onPress={goBack} hitSlop={10} style={s.backChevron}>
               <Ionicons name="chevron-back" size={26} color={theme.accent} />
@@ -936,76 +920,6 @@ export default function FileBrowserScreen({ navigation }: Props) {
         actions={pop ? fileMenuActions(pop.entry) : []}
       />
 
-      <AppDrawer
-        visible={showDrawer}
-        onClose={() => setShowDrawer(false)}
-        header={{ title: 'Supreader', subtitle: `Версия ${Constants.expoConfig?.version ?? '—'}` }}
-        sections={[
-          {
-            title: 'Библиотека',
-            rows: [
-              {
-                icon: 'folder-outline',
-                label: 'Все файлы',
-                active: tab === 'files',
-                onPress: () => { setCurrentPath(MD_READER_DIR); setTab('files'); },
-              },
-              {
-                icon: 'time-outline',
-                label: 'Недавние',
-                active: tab === 'recent',
-                onPress: () => setTab('recent'),
-              },
-            ],
-          },
-          ...(drawerTags.length
-            ? [{
-                title: 'Категории',
-                rows: drawerTags.slice(0, 6).map((t) => ({
-                  icon: 'pricetag-outline' as const,
-                  label: t,
-                  onPress: () => {
-                    setScope('tags');
-                    setSearchTag(t);
-                    setQuery('');
-                    setShowSearch(true);
-                  },
-                })),
-              }]
-            : []),
-          {
-            title: 'Помощник',
-            rows: [
-              {
-                icon: 'sparkles-outline',
-                label: 'Новая сессия',
-                onPress: () => navigation.navigate('TaskChat', {
-                  chatId: newChatId(),
-                  title: 'Помощник',
-                  task: '',
-                }),
-              },
-              {
-                icon: 'trash-outline',
-                label: 'Очистить все сессии',
-                danger: true,
-                onPress: confirmClearSessions,
-              },
-            ],
-          },
-          {
-            title: 'Приложение',
-            rows: [
-              {
-                icon: 'options-outline',
-                label: 'Настройки',
-                onPress: () => navigation.navigate('Settings'),
-              },
-            ],
-          },
-        ]}
-        footer="Читалка .smd · один файл, всё внутри"
-      />
 
       {/* Поиск-оверлей: имя + теги + избранное */}
       <Modal visible={showSearch} animationType="slide" onRequestClose={() => setShowSearch(false)}>
@@ -1028,69 +942,36 @@ export default function FileBrowserScreen({ navigation }: Props) {
                 </Pressable>
               )}
             </View>
-            <Pressable onPress={() => setShowSearch(false)} hitSlop={10}>
-              <Text style={[s.searchCancel, { color: theme.accent }]}>Отмена</Text>
-            </Pressable>
           </View>
-          <View style={s.scopeRow}>
-            {([['files', 'Файлы'], ['tags', 'Теги'], ['fav', 'Избранное']] as [SearchScope, string][]).map(([k, label]) => (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.tagChips}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Pressable
+              onPress={() => setSearchTag(null)}
+              style={[s.tagChip, !searchTag
+                ? { backgroundColor: theme.text, borderColor: theme.text }
+                : { backgroundColor: 'transparent', borderColor: theme.divider }]}
+            >
+              <Text style={[s.tagChipText, { color: !searchTag ? theme.bg : theme.textSecondary }]}>Все файлы</Text>
+            </Pressable>
+            {searchTags.map((t) => (
               <Pressable
-                key={k}
-                onPress={() => { setScope(k); setSearchTag(null); }}
-                style={[
-                  s.scopeChip,
-                  scope === k
-                    ? { backgroundColor: theme.accent, borderColor: theme.accent }
-                    : { backgroundColor: 'transparent', borderColor: theme.divider },
-                ]}
+                key={t}
+                onPress={() => setSearchTag(searchTag === t ? null : t)}
+                style={[s.tagChip, searchTag === t
+                  ? { backgroundColor: theme.text, borderColor: theme.text }
+                  : { backgroundColor: 'transparent', borderColor: theme.divider }]}
               >
-                <Text style={[s.scopeText, { color: scope === k ? '#FFFFFF' : theme.textSecondary }]}>{label}</Text>
+                <Text style={[s.tagChipText, { color: searchTag === t ? theme.bg : theme.textSecondary }]}>#{t}</Text>
               </Pressable>
             ))}
-          </View>
-          {scope === 'tags' && !searchTag && (
+          </ScrollView>
+          {(
             <FlatList
-              data={searchTags}
-              keyExtractor={(t) => t}
-              contentContainerStyle={s.list}
-              renderItem={({ item: t }) => {
-                const count = Object.values(tags).filter((arr) => arr.includes(t)).length;
-                return (
-                  <Pressable onPress={() => setSearchTag(t)} style={[s.tagRow, { borderBottomColor: theme.divider }]}>
-                    <Ionicons name="pricetag" size={18} color={theme.textSecondary} />
-                    <Text style={[s.tagName, { color: theme.text }]}>#{t}</Text>
-                    <Text style={[s.meta, { color: theme.textSecondary }]}>{count}</Text>
-                  </Pressable>
-                );
-              }}
-            />
-          )}
-          {scope === 'tags' && searchTag && (
-            <View style={{ flex: 1 }}>
-              <Pressable onPress={() => setSearchTag(null)} style={s.backRow}>
-                <Ionicons name="chevron-back" size={18} color={theme.accent} />
-                <Text style={[s.backRowText, { color: theme.accent }]}>#{searchTag}</Text>
-              </Pressable>
-              <FlatList
-                data={tagFiles}
-                keyExtractor={(f) => f.uri}
-                contentContainerStyle={s.list}
-                renderItem={({ item: f }) => (
-                  <Pressable onPress={() => { setShowSearch(false); openStoredFile(f.uri, f.name); }} style={[s.item, { borderBottomColor: theme.divider }]}>
-                    <FileTypeIcon name={f.name} theme={theme} />
-                    <View style={s.info}>
-                      <Text style={[s.name, { color: theme.text }]} numberOfLines={1}>{f.name}</Text>
-                    </View>
-                  </Pressable>
-                )}
-              />
-            </View>
-          )}
-          {scope !== 'tags' && q.length > 0 && (
-            <FlatList
-              data={scope === 'fav'
-                ? entries.filter((e) => !e.isDir && favs.includes(e.uri) && e.name.toLowerCase().includes(q))
-                : searchFiles}
+              data={searchFiles}
               keyExtractor={(item) => item.uri}
               contentContainerStyle={s.list}
               renderItem={({ item }) => (
@@ -1490,6 +1371,12 @@ function styles(theme: any, insets: any) {
     },
     searchCapsuleInput: { flex: 1, fontSize: 16, padding: 0 },
     searchCancel: { fontSize: 15, fontFamily: uiFontOf(500) },
+    tagChips: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6, gap: 8, flexDirection: 'row' },
+    tagChip: {
+      borderRadius: 99, borderWidth: StyleSheet.hairlineWidth,
+      paddingHorizontal: 13, paddingVertical: 7,
+    },
+    tagChipText: { fontSize: 13.5, fontFamily: uiFontOf(500) },
     scopeRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 10 },
     scopeChip: { borderRadius: 99, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent', paddingHorizontal: 14, paddingVertical: 7 },
     scopeText: { fontSize: 13, fontFamily: uiFontOf(500) },

@@ -145,7 +145,7 @@
       }
     ],
     "package": "com.helloworld",
-    "versionCode": 10
+    "versionCode": 11
   },
   "name": "Supreader",
   "slug": "supreader",
@@ -157,5 +157,5 @@
     "barStyle": "light-content",
     "enforceContrast": false
   },
-  "version": "1.4.5"
+  "version": "1.4.6"
 }

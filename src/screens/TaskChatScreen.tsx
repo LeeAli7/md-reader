@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ContextPicker } from '../components/ContextPicker';
+import { AppDrawer } from '../components/AppDrawer';
 import { contextItemsFromDoc, contextPrompt, type ContextItem } from '../smd/contextItems';
 import { parseSmd } from '../smd/smdParser';
 import * as DocumentPicker from 'expo-document-picker';
@@ -24,7 +25,7 @@ import { useTheme } from '../hooks/useTheme';
 import { type as tp, font as uiFontOf } from '../theme/type';
 import { useReadingStyle } from '../context/AppSettingsContext';
 import {
-  abortAi, aiStartedAt, appendChat, chatIdFor, getPending, isAiRunning, loadChat,
+  abortAi, aiStartedAt, appendChat, chatIdFor, newChatId, getPending, isAiRunning, loadChat,
   runAskTask, saveChat, setPending, subscribeAi,
   type AttachedImage, type ChatMsg, type PendingJob,
 } from '../smd/ai';
@@ -109,6 +110,7 @@ export default function TaskChatScreen({ navigation, route }: any) {
   const [err, setErr] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [ctxOpen, setCtxOpen] = useState(false);
+  const [drawer, setDrawer] = useState(false);
   const [menu, setMenu] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView | null>(null);
@@ -459,8 +461,8 @@ export default function TaskChatScreen({ navigation, route }: any) {
             </Pressable>
           ) : null}
         </View>
-        <Pressable onPress={() => setMenu(true)} hitSlop={12} style={s.headBtn}>
-          <Ionicons name="ellipsis-horizontal" size={22} color={theme.text} />
+        <Pressable onPress={() => setDrawer(true)} hitSlop={12} style={s.headBtn}>
+          <Ionicons name="menu" size={23} color={theme.text} />
         </Pressable>
       </View>
 
@@ -604,41 +606,41 @@ export default function TaskChatScreen({ navigation, route }: any) {
           </ScrollView>
         ) : null}
 
-        {(ctxLabels.length > 0 || params.uri) ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.ctxRow}
-            keyboardShouldPersistTaps="handled"
-          >
-            {ctxLabels.map((label, i) => (
-              <Pressable
-                key={`${label}-${i}`}
-                onPress={() => {
-                  setCtxLabels((cur) => cur.filter((_, k) => k !== i));
-                  setCtxTexts((cur) => cur.filter((_, k) => k !== i));
-                }}
-                style={[s.ctxChip, { backgroundColor: theme.fill, borderColor: theme.divider }]}
-              >
-                <Text style={[s.ctxChipText, { color: theme.text }]} numberOfLines={1}>{label}</Text>
-                <Ionicons name="close" size={12} color={theme.textSecondary} />
-              </Pressable>
-            ))}
-            {params.uri ? (
-              <Pressable
-                onPress={openPicker}
-                style={[s.ctxChip, { backgroundColor: 'transparent', borderColor: theme.divider }]}
-              >
-                <Ionicons name="add" size={14} color={theme.accent} />
-                <Text style={[s.ctxChipText, { color: theme.accent }]}>контекст</Text>
-              </Pressable>
-            ) : null}
-          </ScrollView>
-        ) : null}
-
         {/* Одно поле: «+» слева, отправка справа, всё внутри скругления */}
         <View style={[s.bar, { paddingBottom: Math.max(8, insets.bottom) }]}>
           <View style={[s.field, { backgroundColor: theme.fill, borderColor: theme.divider }]}>
+            {(ctxLabels.length > 0 || params.uri) ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.ctxRow}
+              keyboardShouldPersistTaps="handled"
+            >
+              {ctxLabels.map((label, i) => (
+                <Pressable
+                  key={`${label}-${i}`}
+                  onPress={() => {
+                    setCtxLabels((cur) => cur.filter((_, k) => k !== i));
+                    setCtxTexts((cur) => cur.filter((_, k) => k !== i));
+                  }}
+                  style={[s.ctxChip, { backgroundColor: theme.fill, borderColor: theme.divider }]}
+                >
+                  <Text style={[s.ctxChipText, { color: theme.text }]} numberOfLines={1}>{label}</Text>
+                  <Ionicons name="close" size={12} color={theme.textSecondary} />
+                </Pressable>
+              ))}
+              {params.uri ? (
+                <Pressable
+                  onPress={openPicker}
+                  style={[s.ctxChip, { backgroundColor: 'transparent', borderColor: theme.divider }]}
+                >
+                  <Ionicons name="add" size={14} color={theme.accent} />
+                  <Text style={[s.ctxChipText, { color: theme.accent }]}>контекст</Text>
+                </Pressable>
+              ) : null}
+            </ScrollView>
+        ) : null}
+            <View style={s.fieldRow}>
             <Pressable onPress={() => setMenu(true)} hitSlop={8} style={s.plus}>
               <Ionicons name="add" size={22} color={theme.textSecondary} />
             </Pressable>
@@ -659,9 +661,55 @@ export default function TaskChatScreen({ navigation, route }: any) {
                 <Ionicons name="arrow-up" size={17} color={theme.textTertiary} />
               </View>
             )}
+            </View>
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <AppDrawer
+        visible={drawer}
+        onClose={() => setDrawer(false)}
+        header={{ title: 'Ветка', subtitle: title }}
+        sections={[
+          {
+            title: 'Сессия',
+            rows: [
+              {
+                icon: 'add-circle-outline',
+                label: 'Новая сессия',
+                hint: 'чистый чат',
+                onPress: () => {
+                  setDrawer(false);
+                  navigation.navigate('TaskChat', {
+                    chatId: newChatId(),
+                    title: 'Новая сессия',
+                    task: '',
+                    uri: params.uri,
+                  });
+                },
+              },
+              {
+                icon: 'trash-outline',
+                label: 'Очистить историю',
+                danger: true,
+                onPress: () => { setDrawer(false); confirmClear(); },
+              },
+            ],
+          },
+          {
+            title: 'Контекст',
+            rows: [
+              {
+                icon: 'albums-outline',
+                label: 'Добавить из файла',
+                hint: 'теория, задача, решение',
+                onPress: () => { setDrawer(false); openPicker(); },
+              },
+            ],
+          },
+        ]}
+        footer={task ? 'Условие и разбор — по подписи под заголовком' : undefined}
+      />
 
       {toast ? (
         <View style={[s.toast, { backgroundColor: theme.text }]}>
@@ -685,6 +733,12 @@ export default function TaskChatScreen({ navigation, route }: any) {
             <Ionicons name="image-outline" size={21} color={theme.text} />
             <Text style={[s.actionText, { color: theme.text }]}>Фото из галереи</Text>
           </Pressable>
+          {params.uri ? (
+            <Pressable onPress={() => { setMenu(false); openPicker(); }} style={[s.action, { borderBottomColor: theme.divider }]}>
+              <Ionicons name="albums-outline" size={21} color={theme.text} />
+              <Text style={[s.actionText, { color: theme.text }]}>Добавить из файла</Text>
+            </Pressable>
+          ) : null}
           <Pressable onPress={pickFiles} style={[s.action, { borderBottomColor: theme.divider }]}>
             <Ionicons name="document-outline" size={21} color={theme.text} />
             <Text style={[s.actionText, { color: theme.text }]}>Файл с телефона</Text>
@@ -797,7 +851,8 @@ const s = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center',
   },
 
-  ctxRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 8 },
+  fieldRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  ctxRow: { flexDirection: 'row', gap: 6, paddingHorizontal: 2, paddingTop: 6, paddingBottom: 2 },
   ctxChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 220,
     borderWidth: StyleSheet.hairlineWidth, borderRadius: 99,
@@ -806,7 +861,7 @@ const s = StyleSheet.create({
   ctxChipText: { fontSize: 12.5, fontFamily: uiFontOf(500) },
   bar: { paddingHorizontal: 14, paddingTop: 4 },
   field: {
-    flexDirection: 'row', alignItems: 'flex-end',
+    flexDirection: 'column', alignItems: 'stretch',
     borderRadius: 26, borderWidth: StyleSheet.hairlineWidth,
     paddingLeft: 5, paddingRight: 5, paddingVertical: 5,
   },
